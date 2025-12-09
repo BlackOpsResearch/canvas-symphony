@@ -1,6 +1,6 @@
 /**
  * V3 Editor Toolbar
- * Left-side tool selection panel
+ * Left-side tool selection with brush/eraser
  */
 
 import React from 'react';
@@ -16,12 +16,9 @@ import {
   Square, 
   Hand, 
   ZoomIn,
-  Upload
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { loadImageToLayer } from '@/lib/canvas/LayerUtils';
-import { toast } from 'sonner';
 
 interface ToolConfig {
   id: ToolType;
@@ -35,8 +32,8 @@ const tools: ToolConfig[] = [
   { id: 'select', name: 'Select', icon: MousePointer2, shortcut: 'V', enabled: true },
   { id: 'move', name: 'Move', icon: Move, shortcut: 'M', enabled: true },
   { id: 'magic-wand', name: 'Magic Wand', icon: Wand2, shortcut: 'W', enabled: true },
-  { id: 'brush', name: 'Brush', icon: Paintbrush, shortcut: 'B', enabled: false },
-  { id: 'eraser', name: 'Eraser', icon: Eraser, shortcut: 'E', enabled: false },
+  { id: 'brush', name: 'Brush', icon: Paintbrush, shortcut: 'B', enabled: true },
+  { id: 'eraser', name: 'Eraser', icon: Eraser, shortcut: 'E', enabled: true },
   { id: 'text', name: 'Text', icon: Type, shortcut: 'T', enabled: false },
   { id: 'shape', name: 'Shape', icon: Square, shortcut: 'U', enabled: false },
   { id: 'hand', name: 'Hand', icon: Hand, shortcut: 'H', enabled: true },
@@ -44,28 +41,7 @@ const tools: ToolConfig[] = [
 ];
 
 export function Toolbar() {
-  const { activeTool, setActiveTool, addLayer, project } = useProject();
-  const fileInputRef = React.useRef<HTMLInputElement>(null);
-
-  // Handle file upload
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    try {
-      const layer = await loadImageToLayer(file);
-      addLayer(layer);
-      toast.success(`Loaded "${layer.name}"`);
-    } catch (error) {
-      toast.error('Failed to load image');
-      console.error(error);
-    }
-
-    // Reset input
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
-  };
+  const { activeTool, setActiveTool, project } = useProject();
 
   // Handle keyboard shortcuts
   React.useEffect(() => {
@@ -86,35 +62,6 @@ export function Toolbar() {
 
   return (
     <div className="flex flex-col items-center gap-1 p-2 bg-panel-bg border-r border-border h-full">
-      {/* Upload button */}
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            className={cn(
-              'flex items-center justify-center w-10 h-10 rounded-lg transition-all duration-200',
-              'bg-primary/10 text-primary hover:bg-primary/20 hover:scale-105',
-              'border border-primary/30'
-            )}
-          >
-            <Upload className="w-5 h-5" />
-          </button>
-        </TooltipTrigger>
-        <TooltipContent side="right">
-          <p>Upload Image</p>
-        </TooltipContent>
-      </Tooltip>
-
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="image/*"
-        onChange={handleFileUpload}
-        className="hidden"
-      />
-
-      <div className="w-6 h-px bg-border my-2" />
-
       {/* Tool buttons */}
       {tools.map((tool) => {
         const Icon = tool.icon;
@@ -150,7 +97,7 @@ export function Toolbar() {
       {/* Spacer */}
       <div className="flex-1" />
 
-      {/* Layer count indicator */}
+      {/* Layer count */}
       {project.layers.length > 0 && (
         <div className="px-2 py-1 text-xs font-mono-precision text-muted-foreground">
           {project.layers.length}L

@@ -1,11 +1,12 @@
 /**
  * V3 Status Bar
- * Bottom status information
+ * Bottom status with tool info and performance
  */
 
 import React from 'react';
 import { useProject } from '@/contexts/ProjectContext';
-import { Layers, MousePointer2, Target, Cpu } from 'lucide-react';
+import { useHistory } from '@/contexts/HistoryContext';
+import { Layers, MousePointer2, Target, Cpu, History } from 'lucide-react';
 
 export function StatusBar() {
   const { 
@@ -13,8 +14,12 @@ export function StatusBar() {
     transform, 
     cursorPosition, 
     hoverPreview,
-    activeSelection 
+    activeSelection,
+    activeTool,
+    isPainting,
   } = useProject();
+
+  const { snapshots, currentIndex } = useHistory();
 
   const baseLayer = project.layers[0];
 
@@ -36,9 +41,18 @@ export function StatusBar() {
             </span>
           </div>
         )}
+
+        {snapshots.length > 0 && (
+          <div className="flex items-center gap-1.5 text-muted-foreground">
+            <History className="w-3.5 h-3.5" />
+            <span className="font-mono-precision">
+              {currentIndex + 1}/{snapshots.length}
+            </span>
+          </div>
+        )}
       </div>
 
-      {/* Center: Cursor position */}
+      {/* Center: Cursor and selection info */}
       <div className="flex items-center gap-4">
         {cursorPosition && baseLayer?.imageData && (
           <div className="flex items-center gap-1.5 text-muted-foreground">
@@ -69,9 +83,17 @@ export function StatusBar() {
             </span>
           </div>
         )}
+
+        {isPainting && (
+          <div className="flex items-center gap-1.5 text-primary">
+            <span className="font-mono-precision">
+              {activeTool === 'brush' ? 'Painting...' : 'Erasing...'}
+            </span>
+          </div>
+        )}
       </div>
 
-      {/* Right: Performance info */}
+      {/* Right: Performance */}
       <div className="flex items-center gap-4">
         <div className="flex items-center gap-1.5 text-muted-foreground">
           <Cpu className="w-3.5 h-3.5" />
@@ -79,6 +101,10 @@ export function StatusBar() {
             {Math.round(transform.zoom * 100)}%
           </span>
         </div>
+        
+        <span className="text-muted-foreground/50 capitalize">
+          {activeTool}
+        </span>
       </div>
     </div>
   );
