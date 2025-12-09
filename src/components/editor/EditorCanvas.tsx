@@ -1,20 +1,25 @@
 /**
  * V3 Editor Canvas
- * Main canvas component with pan/zoom and tool interactions
+ * Main canvas with pan/zoom, magic wand, brush, and eraser
  */
 
 import React, { useRef, useEffect, useCallback, useState } from 'react';
 import { useProject } from '@/contexts/ProjectContext';
+import { useHistory } from '@/contexts/HistoryContext';
 import { CoordinateSystem, coordinateSystem } from '@/lib/canvas/CoordinateSystem';
 import { RenderPipeline } from '@/lib/canvas/RenderPipeline';
 import { floodFillPreview, floodFill } from '@/lib/canvas/FloodFill';
 import { createLayerFromSegment, compositeLayers } from '@/lib/canvas/LayerUtils';
+import { BrushEngine } from '@/lib/canvas/BrushEngine';
 import { CANVAS_CONSTANTS } from '@/lib/canvas/types';
+import { toast } from 'sonner';
 
 export function EditorCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const brushCanvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const renderPipelineRef = useRef<RenderPipeline | null>(null);
+  const brushEngineRef = useRef<BrushEngine | null>(null);
   
   const {
     project,
@@ -23,14 +28,19 @@ export function EditorCanvas() {
     toolOptions,
     hoverPreview,
     activeSelection,
+    isPainting,
     setTransform,
     setHoverPreview,
     setActiveSelection,
     setCursorPosition,
+    setIsPainting,
     addLayer,
+    updateLayer,
+    getActiveLayer,
   } = useProject();
 
-  // Pan/zoom state
+  const { pushSnapshot } = useHistory();
+
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
   const lastHoverRef = useRef<{ x: number; y: number } | null>(null);
@@ -38,8 +48,9 @@ export function EditorCanvas() {
   // Initialize canvas
   useEffect(() => {
     const canvas = canvasRef.current;
+    const brushCanvas = brushCanvasRef.current;
     const container = containerRef.current;
-    if (!canvas || !container) return;
+    if (!canvas || !brushCanvas || !container) return;
 
     const resizeCanvas = () => {
       const dpr = window.devicePixelRatio || 1;
@@ -50,6 +61,11 @@ export function EditorCanvas() {
       canvas.style.width = `${rect.width}px`;
       canvas.style.height = `${rect.height}px`;
 
+      brushCanvas.width = rect.width * dpr;
+      brushCanvas.height = rect.height * dpr;
+      brushCanvas.style.width = `${rect.width}px`;
+      brushCanvas.style.height = `${rect.height}px`;
+
       coordinateSystem.setCanvas(canvas);
       renderPipelineRef.current?.markDirty();
     };
@@ -57,18 +73,37 @@ export function EditorCanvas() {
     resizeCanvas();
     window.addEventListener('resize', resizeCanvas);
 
-    // Initialize render pipeline
     coordinateSystem.setCanvas(canvas);
     renderPipelineRef.current = new RenderPipeline(coordinateSystem);
     renderPipelineRef.current.setCanvas(canvas);
+
+    // Initialize brush engine with project dimensions
+    const baseLayer = project.layers[0];
+    if (baseLayer?.imageData) {
+      brushEngineRef.current = new BrushEngine(
+        baseLayer.imageData.width,
+        baseLayer.imageData.height
+      );
+    }
 
     return () => {
       window.removeEventListener('resize', resizeCanvas);
       renderPipelineRef.current?.dispose();
     };
-  }, []);
+  }, [project.layers.length]);
 
-  // Update coordinate system transform
+  // Update brush engine when project changes
+  useEffect(() => {
+    const baseLayer = project.layers[0];
+    if (baseLayer?.imageData && !brushEngineRef.current) {
+      brushEngineRef.current = new BrushEngine(
+        baseLayer.imageData.width,
+        baseLayer.imageData.height
+      );
+    }
+  }, [project.layers]);
+
+  // Update coordinate system
   useEffect(() => {
     coordinateSystem.setTransform(transform);
     renderPipelineRef.current?.markDirty();
@@ -94,7 +129,7 @@ export function EditorCanvas() {
     };
   }, [project.layers, hoverPreview, activeSelection]);
 
-  // Get composite image data for tools
+  // Get composite image data
   const getCompositeImageData = useCallback((): ImageData | null => {
     if (project.layers.length === 0) return null;
     
@@ -108,7 +143,15 @@ export function EditorCanvas() {
     );
   }, [project.layers]);
 
-  // Handle mouse move (hover preview for magic wand)
+  // Convert world point to image coordinates
+  const worldToImage = useCallback((worldX: number, worldY: number, imageData: ImageData) => {
+    return {
+      x: Math.floor(worldX + imageData.width / 2),
+      y: Math.floor(worldY + imageData.height / 2),
+    };
+  }, []);
+
+  // Handle mouse move
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
     const worldPoint = coordinateSystem.screenToWorld(e.clientX, e.clientY);
     setCursorPosition(worldPoint);
@@ -126,38 +169,46 @@ export function EditorCanvas() {
       return;
     }
 
+    // Brush/Eraser painting
+    if (isPainting && (activeTool === 'brush' || activeTool === 'eraser')) {
+      const activeLayer = getActiveLayer();
+      if (!activeLayer?.imageData || !brushEngineRef.current) return;
+
+      const imagePoint = worldToImage(worldPoint.x, worldPoint.y, activeLayer.imageData);
+      brushEngineRef.current.continueStroke(imagePoint, toolOptions, activeTool === 'eraser');
+      
+      // Update layer preview
+      const newImageData = brushEngineRef.current.applyToLayer(activeLayer.imageData);
+      updateLayer(activeLayer.id, { imageData: newImageData });
+      return;
+    }
+
     // Magic wand hover preview
     if (activeTool === 'magic-wand' && project.layers.length > 0) {
       const compositeData = getCompositeImageData();
       if (!compositeData) return;
 
-      // Throttle preview updates
-      const now = Date.now();
       if (lastHoverRef.current) {
         const dist = Math.hypot(
           worldPoint.x - lastHoverRef.current.x,
           worldPoint.y - lastHoverRef.current.y
         );
-        if (dist < 2) return; // Skip if cursor moved less than 2 pixels
+        if (dist < 2) return;
       }
       lastHoverRef.current = worldPoint;
 
-      // Convert world to image coordinates
-      const imageX = Math.floor(worldPoint.x + compositeData.width / 2);
-      const imageY = Math.floor(worldPoint.y + compositeData.height / 2);
+      const imagePoint = worldToImage(worldPoint.x, worldPoint.y, compositeData);
 
-      // Check bounds
-      if (imageX < 0 || imageX >= compositeData.width ||
-          imageY < 0 || imageY >= compositeData.height) {
+      if (imagePoint.x < 0 || imagePoint.x >= compositeData.width ||
+          imagePoint.y < 0 || imagePoint.y >= compositeData.height) {
         setHoverPreview(null);
         return;
       }
 
-      // Run flood fill preview
       const result = floodFillPreview(
         compositeData,
-        imageX,
-        imageY,
+        imagePoint.x,
+        imagePoint.y,
         toolOptions.tolerance,
         CANVAS_CONSTANTS.MAX_PREVIEW_PIXELS
       );
@@ -167,19 +218,23 @@ export function EditorCanvas() {
   }, [
     activeTool,
     isPanning,
+    isPainting,
     panStart,
     transform,
     project.layers,
-    toolOptions.tolerance,
+    toolOptions,
     getCompositeImageData,
+    getActiveLayer,
+    worldToImage,
     setHoverPreview,
     setCursorPosition,
     setTransform,
+    updateLayer,
   ]);
 
   // Handle mouse down
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    // Middle mouse or space+left click = pan
+    // Middle mouse or space+left = pan
     if (e.button === 1 || (e.button === 0 && activeTool === 'hand')) {
       setIsPanning(true);
       setPanStart({ x: e.clientX, y: e.clientY });
@@ -187,33 +242,72 @@ export function EditorCanvas() {
       return;
     }
 
-    // Left click with magic wand = select
+    // Brush/Eraser
+    if (e.button === 0 && (activeTool === 'brush' || activeTool === 'eraser')) {
+      const activeLayer = getActiveLayer();
+      if (!activeLayer?.imageData) {
+        toast.error('Select a layer first');
+        return;
+      }
+      if (activeLayer.locked) {
+        toast.error('Layer is locked');
+        return;
+      }
+
+      // Initialize brush engine if needed
+      if (!brushEngineRef.current) {
+        brushEngineRef.current = new BrushEngine(
+          activeLayer.imageData.width,
+          activeLayer.imageData.height
+        );
+      }
+
+      // Save to history before painting
+      pushSnapshot(
+        activeTool === 'brush' ? 'Brush stroke' : 'Erase',
+        project.layers,
+        project.selectedLayerIds,
+        project.activeLayerId,
+        transform
+      );
+
+      const worldPoint = coordinateSystem.screenToWorld(e.clientX, e.clientY);
+      const imagePoint = worldToImage(worldPoint.x, worldPoint.y, activeLayer.imageData);
+
+      brushEngineRef.current.startStroke(imagePoint, toolOptions, activeTool === 'eraser');
+      setIsPainting(true);
+      return;
+    }
+
+    // Magic wand click
     if (e.button === 0 && activeTool === 'magic-wand' && project.layers.length > 0) {
       const worldPoint = coordinateSystem.screenToWorld(e.clientX, e.clientY);
       const compositeData = getCompositeImageData();
       if (!compositeData) return;
 
-      const imageX = Math.floor(worldPoint.x + compositeData.width / 2);
-      const imageY = Math.floor(worldPoint.y + compositeData.height / 2);
+      const imagePoint = worldToImage(worldPoint.x, worldPoint.y, compositeData);
 
-      if (imageX < 0 || imageX >= compositeData.width ||
-          imageY < 0 || imageY >= compositeData.height) {
+      if (imagePoint.x < 0 || imagePoint.x >= compositeData.width ||
+          imagePoint.y < 0 || imagePoint.y >= compositeData.height) {
         return;
       }
 
-      // Full flood fill (no pixel limit)
-      const result = floodFill(compositeData, imageX, imageY, {
+      const result = floodFill(compositeData, imagePoint.x, imagePoint.y, {
         tolerance: toolOptions.tolerance,
         contiguous: toolOptions.contiguous,
       });
 
       if (result.pixels.length > 0) {
-        // Create new layer from selection
-        if (e.shiftKey) {
-          // Shift+click: Add to selection
-          setActiveSelection(result);
-        } else if (e.altKey) {
-          // Alt+click: Create layer from selection
+        if (e.altKey) {
+          // Alt+click: Extract to new layer
+          pushSnapshot(
+            'Extract selection',
+            project.layers,
+            project.selectedLayerIds,
+            project.activeLayerId,
+            transform
+          );
+          
           const newLayer = createLayerFromSegment(
             `Segment ${project.layers.length + 1}`,
             compositeData,
@@ -221,39 +315,55 @@ export function EditorCanvas() {
           );
           addLayer(newLayer);
           setActiveSelection(null);
+          toast.success('Extracted to new layer');
         } else {
-          // Normal click: Set selection
           setActiveSelection(result);
         }
       }
     }
   }, [
     activeTool,
-    project.layers,
+    project,
     toolOptions,
+    transform,
     getCompositeImageData,
+    getActiveLayer,
+    worldToImage,
     addLayer,
+    pushSnapshot,
     setActiveSelection,
+    setIsPainting,
   ]);
 
   // Handle mouse up
   const handleMouseUp = useCallback(() => {
     setIsPanning(false);
-  }, []);
+    
+    if (isPainting && brushEngineRef.current) {
+      brushEngineRef.current.endStroke();
+      brushEngineRef.current.clear();
+      setIsPainting(false);
+    }
+  }, [isPainting, setIsPainting]);
 
   // Handle mouse leave
   const handleMouseLeave = useCallback(() => {
     setIsPanning(false);
     setCursorPosition(null);
     setHoverPreview(null);
-  }, [setCursorPosition, setHoverPreview]);
+    
+    if (isPainting && brushEngineRef.current) {
+      brushEngineRef.current.endStroke();
+      brushEngineRef.current.clear();
+      setIsPainting(false);
+    }
+  }, [isPainting, setCursorPosition, setHoverPreview, setIsPainting]);
 
   // Handle wheel (zoom)
   const handleWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault();
 
     if (e.ctrlKey || e.metaKey) {
-      // Pinch zoom
       const zoomDelta = -e.deltaY * 0.01;
       const newZoom = Math.max(
         CANVAS_CONSTANTS.MIN_ZOOM,
@@ -263,7 +373,6 @@ export function EditorCanvas() {
       coordinateSystem.zoomToPoint(e.clientX, e.clientY, newZoom);
       setTransform(coordinateSystem.getTransform());
     } else {
-      // Pan
       setTransform({
         panX: transform.panX - e.deltaX,
         panY: transform.panY - e.deltaY,
@@ -312,6 +421,7 @@ export function EditorCanvas() {
     if (activeTool === 'magic-wand') return 'crosshair';
     if (activeTool === 'move') return 'move';
     if (activeTool === 'zoom') return 'zoom-in';
+    if (activeTool === 'brush' || activeTool === 'eraser') return 'crosshair';
     return 'default';
   };
 
@@ -331,6 +441,12 @@ export function EditorCanvas() {
         onWheel={handleWheel}
         onContextMenu={(e) => e.preventDefault()}
       />
+
+      {/* Brush preview canvas (overlay) */}
+      <canvas
+        ref={brushCanvasRef}
+        className="absolute inset-0 pointer-events-none"
+      />
       
       {/* Zoom indicator */}
       <div className="absolute bottom-4 right-4 px-3 py-1.5 bg-panel-bg/90 backdrop-blur-sm rounded-md border border-border">
@@ -344,6 +460,15 @@ export function EditorCanvas() {
         <div className="absolute bottom-4 left-4 px-3 py-1.5 bg-panel-bg/90 backdrop-blur-sm rounded-md border border-border">
           <span className="font-mono-precision text-xs text-muted-foreground">
             {project.layers[0]?.imageData?.width} × {project.layers[0]?.imageData?.height}
+          </span>
+        </div>
+      )}
+
+      {/* Brush size indicator */}
+      {(activeTool === 'brush' || activeTool === 'eraser') && (
+        <div className="absolute top-4 left-4 px-3 py-1.5 bg-panel-bg/90 backdrop-blur-sm rounded-md border border-border">
+          <span className="font-mono-precision text-xs text-muted-foreground">
+            {toolOptions.size}px · {toolOptions.hardness}% · {toolOptions.opacity}%
           </span>
         </div>
       )}

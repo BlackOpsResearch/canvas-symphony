@@ -38,11 +38,34 @@ export interface Transform {
 }
 
 // ============================================
+// COLOR TYPES
+// ============================================
+
+export interface Color {
+  r: number;
+  g: number;
+  b: number;
+  a: number;
+}
+
+// ============================================
 // LAYER SYSTEM TYPES
 // ============================================
 
 export type LayerType = 'raster' | 'text' | 'shape' | 'group';
-export type BlendMode = 'normal' | 'multiply' | 'screen' | 'overlay' | 'darken' | 'lighten';
+export type BlendMode = 
+  | 'normal' 
+  | 'multiply' 
+  | 'screen' 
+  | 'overlay' 
+  | 'darken' 
+  | 'lighten'
+  | 'color-dodge'
+  | 'color-burn'
+  | 'hard-light'
+  | 'soft-light'
+  | 'difference'
+  | 'exclusion';
 
 export interface LayerTransform {
   rotation: number;
@@ -50,6 +73,33 @@ export interface LayerTransform {
   scaleY: number;
   translateX: number;
   translateY: number;
+}
+
+export interface LayerEffect {
+  id: string;
+  type: 'drop-shadow' | 'inner-shadow' | 'outer-glow' | 'inner-glow' | 'blur';
+  enabled: boolean;
+  parameters: Record<string, unknown>;
+}
+
+export interface DropShadowEffect extends LayerEffect {
+  type: 'drop-shadow';
+  parameters: {
+    offsetX: number;
+    offsetY: number;
+    blur: number;
+    spread: number;
+    color: Color;
+  };
+}
+
+export interface GlowEffect extends LayerEffect {
+  type: 'outer-glow' | 'inner-glow';
+  parameters: {
+    blur: number;
+    spread: number;
+    color: Color;
+  };
 }
 
 export interface Layer {
@@ -64,6 +114,7 @@ export interface Layer {
   bounds: Rectangle;
   transform: LayerTransform;
   modifiers: Modifier[];
+  effects: LayerEffect[];
   createdAt: number;
   modifiedAt: number;
 }
@@ -145,12 +196,20 @@ export interface ToolState {
 }
 
 export interface ToolOptions {
+  // Common
   size: number;
   hardness: number;
   opacity: number;
+  
+  // Magic Wand
   tolerance: number;
   contiguous: boolean;
   antiAlias: boolean;
+  
+  // Brush/Eraser
+  brushColor: Color;
+  brushFlow: number;
+  brushSpacing: number;
 }
 
 // ============================================
@@ -246,8 +305,23 @@ export const CANVAS_CONSTANTS = {
   PAN_SPEED: 1,
   DEFAULT_TOLERANCE: 32,
   MAX_PREVIEW_PIXELS: 50000,
-  PREVIEW_THROTTLE_MS: 16, // 60fps
+  PREVIEW_THROTTLE_MS: 16,
 } as const;
+
+export const BLEND_MODES: { value: BlendMode; label: string }[] = [
+  { value: 'normal', label: 'Normal' },
+  { value: 'multiply', label: 'Multiply' },
+  { value: 'screen', label: 'Screen' },
+  { value: 'overlay', label: 'Overlay' },
+  { value: 'darken', label: 'Darken' },
+  { value: 'lighten', label: 'Lighten' },
+  { value: 'color-dodge', label: 'Color Dodge' },
+  { value: 'color-burn', label: 'Color Burn' },
+  { value: 'hard-light', label: 'Hard Light' },
+  { value: 'soft-light', label: 'Soft Light' },
+  { value: 'difference', label: 'Difference' },
+  { value: 'exclusion', label: 'Exclusion' },
+];
 
 export const DEFAULT_LAYER_TRANSFORM: LayerTransform = {
   rotation: 0,
@@ -257,6 +331,13 @@ export const DEFAULT_LAYER_TRANSFORM: LayerTransform = {
   translateY: 0,
 };
 
+export const DEFAULT_BRUSH_COLOR: Color = {
+  r: 255,
+  g: 255,
+  b: 255,
+  a: 1,
+};
+
 export const DEFAULT_TOOL_OPTIONS: ToolOptions = {
   size: 20,
   hardness: 100,
@@ -264,4 +345,7 @@ export const DEFAULT_TOOL_OPTIONS: ToolOptions = {
   tolerance: 32,
   contiguous: true,
   antiAlias: true,
+  brushColor: DEFAULT_BRUSH_COLOR,
+  brushFlow: 100,
+  brushSpacing: 25,
 };

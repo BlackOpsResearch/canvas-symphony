@@ -9,6 +9,8 @@ import {
   LayerType, 
   Rectangle, 
   SegmentationResult,
+  LayerEffect,
+  Color,
   DEFAULT_LAYER_TRANSFORM,
 } from './types';
 
@@ -35,6 +37,7 @@ export function createLayer(
     bounds: { x: 0, y: 0, width, height },
     transform: { ...DEFAULT_LAYER_TRANSFORM },
     modifiers: [],
+    effects: [],
     createdAt: Date.now(),
     modifiedAt: Date.now(),
   };
@@ -59,6 +62,7 @@ export function createLayerFromImageData(
     bounds: { x: 0, y: 0, width: imageData.width, height: imageData.height },
     transform: { ...DEFAULT_LAYER_TRANSFORM },
     modifiers: [],
+    effects: [],
     createdAt: Date.now(),
     modifiedAt: Date.now(),
   };
@@ -66,7 +70,6 @@ export function createLayerFromImageData(
 
 /**
  * Create layer from segmentation result
- * Extracts only the selected pixels from source image
  */
 export function createLayerFromSegment(
   name: string,
@@ -75,10 +78,8 @@ export function createLayerFromSegment(
 ): Layer {
   const { mask, bounds } = segmentation;
   
-  // Create new ImageData for extracted pixels
   const extractedData = new ImageData(bounds.width, bounds.height);
   
-  // Copy selected pixels
   for (let y = 0; y < bounds.height; y++) {
     for (let x = 0; x < bounds.width; x++) {
       const sourceX = bounds.x + x;
@@ -116,6 +117,7 @@ export function createLayerFromSegment(
     bounds,
     transform: { ...DEFAULT_LAYER_TRANSFORM },
     modifiers: [],
+    effects: [],
     createdAt: Date.now(),
     modifiedAt: Date.now(),
   };
@@ -141,6 +143,7 @@ export function duplicateLayer(layer: Layer): Layer {
     name: `${layer.name} Copy`,
     imageData: newImageData,
     modifiers: layer.modifiers.map(m => ({ ...m, id: uuidv4() })),
+    effects: layer.effects.map(e => ({ ...e, id: uuidv4() })),
     createdAt: Date.now(),
     modifiedAt: Date.now(),
   };
@@ -192,7 +195,6 @@ export function compositeLayers(
   canvas.height = height;
   const ctx = canvas.getContext('2d')!;
   
-  // Draw each visible layer
   const visibleLayers = layers.filter(l => l.visible);
   
   for (const layer of visibleLayers) {
@@ -202,14 +204,12 @@ export function compositeLayers(
     ctx.globalAlpha = layer.opacity;
     ctx.globalCompositeOperation = layer.blendMode as GlobalCompositeOperation;
     
-    // Create temp canvas for layer
     const tempCanvas = document.createElement('canvas');
     tempCanvas.width = layer.imageData.width;
     tempCanvas.height = layer.imageData.height;
     const tempCtx = tempCanvas.getContext('2d')!;
     tempCtx.putImageData(layer.imageData, 0, 0);
     
-    // Center layer in composite
     const x = (width - layer.imageData.width) / 2;
     const y = (height - layer.imageData.height) / 2;
     
@@ -221,7 +221,7 @@ export function compositeLayers(
 }
 
 /**
- * Apply transparency mask to layer (non-destructive via modifier)
+ * Apply transparency mask to layer
  */
 export function applyTransparencyMask(
   imageData: ImageData,
@@ -236,9 +236,44 @@ export function applyTransparencyMask(
   
   for (let i = 0; i < mask.length; i++) {
     const maskValue = inverted ? 255 - mask[i] : mask[i];
-    const dataIndex = i * 4 + 3; // Alpha channel
+    const dataIndex = i * 4 + 3;
     result.data[dataIndex] = Math.round((result.data[dataIndex] * (255 - maskValue)) / 255);
   }
   
   return result;
+}
+
+/**
+ * Create drop shadow effect
+ */
+export function createDropShadowEffect(
+  offsetX: number = 4,
+  offsetY: number = 4,
+  blur: number = 8,
+  spread: number = 0,
+  color: Color = { r: 0, g: 0, b: 0, a: 0.5 }
+): LayerEffect {
+  return {
+    id: uuidv4(),
+    type: 'drop-shadow',
+    enabled: true,
+    parameters: { offsetX, offsetY, blur, spread, color },
+  };
+}
+
+/**
+ * Create glow effect
+ */
+export function createGlowEffect(
+  type: 'outer-glow' | 'inner-glow' = 'outer-glow',
+  blur: number = 12,
+  spread: number = 0,
+  color: Color = { r: 0, g: 212, b: 255, a: 0.8 }
+): LayerEffect {
+  return {
+    id: uuidv4(),
+    type,
+    enabled: true,
+    parameters: { blur, spread, color },
+  };
 }

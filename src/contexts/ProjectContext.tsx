@@ -15,7 +15,6 @@ import {
   DEFAULT_TOOL_OPTIONS,
   CANVAS_CONSTANTS,
 } from '@/lib/canvas/types';
-import { createLayer } from '@/lib/canvas/LayerUtils';
 
 // ============================================
 // STATE TYPES
@@ -30,6 +29,7 @@ interface ProjectState {
   activeSelection: SegmentationResult | null;
   cursorPosition: { x: number; y: number } | null;
   isLoading: boolean;
+  isPainting: boolean;
 }
 
 // ============================================
@@ -38,6 +38,7 @@ interface ProjectState {
 
 type ProjectAction =
   | { type: 'SET_PROJECT'; payload: Project }
+  | { type: 'SET_LAYERS'; payload: Layer[] }
   | { type: 'ADD_LAYER'; payload: Layer }
   | { type: 'REMOVE_LAYER'; payload: string }
   | { type: 'UPDATE_LAYER'; payload: { id: string; updates: Partial<Layer> } }
@@ -49,7 +50,8 @@ type ProjectAction =
   | { type: 'SET_HOVER_PREVIEW'; payload: SegmentationResult | null }
   | { type: 'SET_ACTIVE_SELECTION'; payload: SegmentationResult | null }
   | { type: 'SET_CURSOR_POSITION'; payload: { x: number; y: number } | null }
-  | { type: 'SET_LOADING'; payload: boolean };
+  | { type: 'SET_LOADING'; payload: boolean }
+  | { type: 'SET_PAINTING'; payload: boolean };
 
 // ============================================
 // INITIAL STATE
@@ -76,6 +78,7 @@ const initialState: ProjectState = {
   activeSelection: null,
   cursorPosition: null,
   isLoading: false,
+  isPainting: false,
 };
 
 // ============================================
@@ -86,6 +89,16 @@ function projectReducer(state: ProjectState, action: ProjectAction): ProjectStat
   switch (action.type) {
     case 'SET_PROJECT':
       return { ...state, project: action.payload };
+
+    case 'SET_LAYERS':
+      return {
+        ...state,
+        project: {
+          ...state.project,
+          layers: action.payload,
+          modifiedAt: Date.now(),
+        },
+      };
 
     case 'ADD_LAYER': {
       const newLayers = [...state.project.layers, action.payload];
@@ -184,6 +197,9 @@ function projectReducer(state: ProjectState, action: ProjectAction): ProjectStat
     case 'SET_LOADING':
       return { ...state, isLoading: action.payload };
 
+    case 'SET_PAINTING':
+      return { ...state, isPainting: action.payload };
+
     default:
       return state;
   }
@@ -195,17 +211,18 @@ function projectReducer(state: ProjectState, action: ProjectAction): ProjectStat
 
 interface ProjectContextValue extends ProjectState {
   dispatch: React.Dispatch<ProjectAction>;
-  // Helper actions
   addLayer: (layer: Layer) => void;
   removeLayer: (id: string) => void;
   updateLayer: (id: string, updates: Partial<Layer>) => void;
   selectLayer: (id: string | null) => void;
+  setLayers: (layers: Layer[]) => void;
   setTransform: (transform: Partial<Transform>) => void;
   setActiveTool: (tool: ToolType) => void;
   setToolOptions: (options: Partial<ToolOptions>) => void;
   setHoverPreview: (preview: SegmentationResult | null) => void;
   setActiveSelection: (selection: SegmentationResult | null) => void;
   setCursorPosition: (position: { x: number; y: number } | null) => void;
+  setIsPainting: (isPainting: boolean) => void;
   getActiveLayer: () => Layer | null;
   getCompositeImageData: () => ImageData | null;
 }
@@ -239,6 +256,10 @@ export function ProjectProvider({ children }: ProjectProviderProps) {
     dispatch({ type: 'SELECT_LAYER', payload: id });
   }, []);
 
+  const setLayers = useCallback((layers: Layer[]) => {
+    dispatch({ type: 'SET_LAYERS', payload: layers });
+  }, []);
+
   const setTransform = useCallback((transform: Partial<Transform>) => {
     dispatch({ type: 'SET_TRANSFORM', payload: transform });
   }, []);
@@ -263,6 +284,10 @@ export function ProjectProvider({ children }: ProjectProviderProps) {
     dispatch({ type: 'SET_CURSOR_POSITION', payload: position });
   }, []);
 
+  const setIsPainting = useCallback((isPainting: boolean) => {
+    dispatch({ type: 'SET_PAINTING', payload: isPainting });
+  }, []);
+
   const getActiveLayer = useCallback((): Layer | null => {
     const { activeLayerId, layers } = state.project;
     if (!activeLayerId) return null;
@@ -283,6 +308,7 @@ export function ProjectProvider({ children }: ProjectProviderProps) {
 
       ctx.save();
       ctx.globalAlpha = layer.opacity;
+      ctx.globalCompositeOperation = layer.blendMode as GlobalCompositeOperation;
 
       const tempCanvas = document.createElement('canvas');
       tempCanvas.width = layer.imageData.width;
@@ -307,12 +333,14 @@ export function ProjectProvider({ children }: ProjectProviderProps) {
     removeLayer,
     updateLayer,
     selectLayer,
+    setLayers,
     setTransform,
     setActiveTool,
     setToolOptions,
     setHoverPreview,
     setActiveSelection,
     setCursorPosition,
+    setIsPainting,
     getActiveLayer,
     getCompositeImageData,
   };
