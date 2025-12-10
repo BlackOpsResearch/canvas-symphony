@@ -39,36 +39,43 @@ export class CoordinateSystem {
   }
 
   /**
-   * Get viewport center in canvas coordinates
+   * Get DPR
+   */
+  getDpr(): number {
+    return this.dpr;
+  }
+
+  /**
+   * Get viewport center in CSS pixel coordinates
    */
   getViewportCenter(): Point {
     if (!this.canvas) return { x: 0, y: 0 };
+    // Use CSS dimensions, not physical canvas dimensions
+    const rect = this.canvas.getBoundingClientRect();
     return {
-      x: this.canvas.width / (2 * this.dpr),
-      y: this.canvas.height / (2 * this.dpr),
+      x: rect.width / 2,
+      y: rect.height / 2,
     };
   }
 
   /**
-   * SCREEN → CANVAS
-   * Convert raw browser event coordinates to canvas pixel coordinates
+   * SCREEN → CANVAS (CSS pixels relative to canvas)
+   * Convert raw browser event coordinates to canvas-relative CSS pixel coordinates
    */
   screenToCanvas(screenX: number, screenY: number): Point {
     if (!this.canvas) return { x: screenX, y: screenY };
 
     const rect = this.canvas.getBoundingClientRect();
-    const scaleX = this.canvas.width / rect.width;
-    const scaleY = this.canvas.height / rect.height;
 
     return {
-      x: (screenX - rect.left) * scaleX / this.dpr,
-      y: (screenY - rect.top) * scaleY / this.dpr,
+      x: screenX - rect.left,
+      y: screenY - rect.top,
     };
   }
 
   /**
    * CANVAS → WORLD
-   * Convert canvas coordinates to world space
+   * Convert canvas-relative CSS pixel coordinates to world space
    */
   canvasToWorld(canvasX: number, canvasY: number): Point {
     const center = this.getViewportCenter();
@@ -91,7 +98,7 @@ export class CoordinateSystem {
 
   /**
    * WORLD → CANVAS
-   * Convert world coordinates to canvas pixel coordinates
+   * Convert world coordinates to canvas-relative CSS pixel coordinates
    */
   worldToCanvas(worldX: number, worldY: number): Point {
     const center = this.getViewportCenter();
@@ -112,12 +119,10 @@ export class CoordinateSystem {
 
     const canvasPoint = this.worldToCanvas(worldX, worldY);
     const rect = this.canvas.getBoundingClientRect();
-    const scaleX = rect.width / this.canvas.width;
-    const scaleY = rect.height / this.canvas.height;
 
     return {
-      x: canvasPoint.x * this.dpr * scaleX + rect.left,
-      y: canvasPoint.y * this.dpr * scaleY + rect.top,
+      x: canvasPoint.x + rect.left,
+      y: canvasPoint.y + rect.top,
     };
   }
 
@@ -188,11 +193,9 @@ export class CoordinateSystem {
       return { x: 0, y: 0, width: 0, height: 0 };
     }
 
+    const rect = this.canvas.getBoundingClientRect();
     const topLeft = this.canvasToWorld(0, 0);
-    const bottomRight = this.canvasToWorld(
-      this.canvas.width / this.dpr,
-      this.canvas.height / this.dpr
-    );
+    const bottomRight = this.canvasToWorld(rect.width, rect.height);
 
     return {
       x: topLeft.x,
@@ -204,12 +207,18 @@ export class CoordinateSystem {
 
   /**
    * Apply transform to canvas context
+   * IMPORTANT: Account for DPR when drawing to high-DPI canvas
    */
   applyTransformToContext(ctx: CanvasRenderingContext2D): void {
-    const center = this.getViewportCenter();
     const { panX, panY, zoom } = this.transform;
-
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    
+    // Reset and apply DPR scaling first
+    ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    
+    // Get center in CSS pixels
+    const center = this.getViewportCenter();
+    
+    // Apply pan and zoom (all in CSS pixel space, DPR handled by initial scale)
     ctx.translate(panX + center.x, panY + center.y);
     ctx.scale(zoom, zoom);
   }
@@ -227,10 +236,9 @@ export class CoordinateSystem {
     const worldPoint = this.screenToWorld(screenX, screenY);
 
     // Update zoom
-    const oldZoom = this.transform.zoom;
     this.transform.zoom = clampedZoom;
 
-    // Get canvas point after zoom
+    // Get canvas point after zoom change
     const canvasPoint = this.screenToCanvas(screenX, screenY);
     const center = this.getViewportCenter();
 
@@ -260,8 +268,9 @@ export class CoordinateSystem {
   fitToViewport(imageWidth: number, imageHeight: number, padding: number = 50): void {
     if (!this.canvas) return;
 
-    const viewportWidth = this.canvas.width / this.dpr - padding * 2;
-    const viewportHeight = this.canvas.height / this.dpr - padding * 2;
+    const rect = this.canvas.getBoundingClientRect();
+    const viewportWidth = rect.width - padding * 2;
+    const viewportHeight = rect.height - padding * 2;
 
     const scaleX = viewportWidth / imageWidth;
     const scaleY = viewportHeight / imageHeight;
