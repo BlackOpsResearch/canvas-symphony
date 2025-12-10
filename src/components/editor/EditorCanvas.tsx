@@ -1,6 +1,7 @@
 /**
  * V3 Editor Canvas
  * Main canvas with pan/zoom, magic wand, brush, and eraser
+ * Controls: Right-click+drag=pan, Right-click+scroll=zoom
  */
 
 import React, { useRef, useEffect, useCallback, useState } from 'react';
@@ -43,6 +44,7 @@ export function EditorCanvas() {
 
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
+  const [isRightMouseDown, setIsRightMouseDown] = useState(false);
   const lastHoverRef = useRef<{ x: number; y: number } | null>(null);
 
   // Initialize canvas
@@ -156,7 +158,8 @@ export function EditorCanvas() {
     const worldPoint = coordinateSystem.screenToWorld(e.clientX, e.clientY);
     setCursorPosition(worldPoint);
 
-    if (isPanning) {
+    // Right-click + drag = pan
+    if (isPanning || (isRightMouseDown && e.buttons === 2)) {
       const deltaX = e.clientX - panStart.x;
       const deltaY = e.clientY - panStart.y;
       
@@ -184,16 +187,17 @@ export function EditorCanvas() {
     }
 
     // Magic wand hover preview
-    if (activeTool === 'magic-wand' && project.layers.length > 0) {
+    if (activeTool === 'magic-wand' && project.layers.length > 0 && !isRightMouseDown) {
       const compositeData = getCompositeImageData();
       if (!compositeData) return;
 
+      // Throttle hover updates
       if (lastHoverRef.current) {
         const dist = Math.hypot(
           worldPoint.x - lastHoverRef.current.x,
           worldPoint.y - lastHoverRef.current.y
         );
-        if (dist < 2) return;
+        if (dist < 3) return;
       }
       lastHoverRef.current = worldPoint;
 
@@ -219,6 +223,7 @@ export function EditorCanvas() {
     activeTool,
     isPanning,
     isPainting,
+    isRightMouseDown,
     panStart,
     transform,
     project.layers,
@@ -234,7 +239,16 @@ export function EditorCanvas() {
 
   // Handle mouse down
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    // Middle mouse or space+left = pan
+    // Right-click = start pan
+    if (e.button === 2) {
+      setIsRightMouseDown(true);
+      setIsPanning(true);
+      setPanStart({ x: e.clientX, y: e.clientY });
+      e.preventDefault();
+      return;
+    }
+
+    // Middle mouse or hand tool = pan
     if (e.button === 1 || (e.button === 0 && activeTool === 'hand')) {
       setIsPanning(true);
       setPanStart({ x: e.clientX, y: e.clientY });
@@ -336,7 +350,10 @@ export function EditorCanvas() {
   ]);
 
   // Handle mouse up
-  const handleMouseUp = useCallback(() => {
+  const handleMouseUp = useCallback((e: React.MouseEvent) => {
+    if (e.button === 2) {
+      setIsRightMouseDown(false);
+    }
     setIsPanning(false);
     
     if (isPainting && brushEngineRef.current) {
@@ -349,6 +366,7 @@ export function EditorCanvas() {
   // Handle mouse leave
   const handleMouseLeave = useCallback(() => {
     setIsPanning(false);
+    setIsRightMouseDown(false);
     setCursorPosition(null);
     setHoverPreview(null);
     
@@ -363,7 +381,9 @@ export function EditorCanvas() {
   const handleWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault();
 
-    if (e.ctrlKey || e.metaKey) {
+    // Right-click held + scroll = zoom
+    // OR Ctrl/Cmd + scroll = zoom
+    if (isRightMouseDown || e.ctrlKey || e.metaKey) {
       const zoomDelta = -e.deltaY * 0.01;
       const newZoom = Math.max(
         CANVAS_CONSTANTS.MIN_ZOOM,
@@ -373,12 +393,13 @@ export function EditorCanvas() {
       coordinateSystem.zoomToPoint(e.clientX, e.clientY, newZoom);
       setTransform(coordinateSystem.getTransform());
     } else {
+      // Regular scroll = pan
       setTransform({
         panX: transform.panX - e.deltaX,
         panY: transform.panY - e.deltaY,
       });
     }
-  }, [transform, setTransform]);
+  }, [transform, setTransform, isRightMouseDown]);
 
   // Handle keyboard shortcuts
   useEffect(() => {
@@ -416,7 +437,7 @@ export function EditorCanvas() {
 
   // Cursor style
   const getCursor = () => {
-    if (isPanning) return 'grabbing';
+    if (isPanning || isRightMouseDown) return 'grabbing';
     if (activeTool === 'hand') return 'grab';
     if (activeTool === 'magic-wand') return 'crosshair';
     if (activeTool === 'move') return 'move';
@@ -472,6 +493,13 @@ export function EditorCanvas() {
           </span>
         </div>
       )}
+
+      {/* Controls hint */}
+      <div className="absolute top-4 right-4 px-3 py-1.5 bg-panel-bg/90 backdrop-blur-sm rounded-md border border-border">
+        <span className="text-[10px] text-muted-foreground/70">
+          Right-drag: Pan · Right+Scroll: Zoom
+        </span>
+      </div>
     </div>
   );
 }

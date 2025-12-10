@@ -26,7 +26,7 @@ function colorDifference(
 
 /**
  * Iterative flood fill algorithm
- * Uses queue-based BFS instead of recursion to avoid stack overflow
+ * Uses proper BFS with queue for correct expanding fill
  */
 export function floodFill(
   imageData: ImageData,
@@ -76,13 +76,14 @@ export function floodFill(
   const toleranceThreshold = (tolerance / 255) * 441.67; // sqrt(255^2 * 3)
 
   if (contiguous) {
-    // BFS flood fill
-    const queue: number[] = [startX, startY];
+    // BFS flood fill using proper queue (FIFO)
+    // Store points as objects for clarity
+    const queue: Array<{x: number, y: number}> = [{x: startX, y: startY}];
+    let queueHead = 0; // Use index instead of shift() for performance
     let hitLimit = false;
 
-    while (queue.length > 0) {
-      const y = queue.pop()!;
-      const x = queue.pop()!;
+    while (queueHead < queue.length) {
+      const {x, y} = queue[queueHead++];
 
       // Bounds check
       if (x < 0 || x >= width || y < 0 || y >= height) continue;
@@ -119,11 +120,11 @@ export function floodFill(
           break;
         }
 
-        // Add neighbors (4-connectivity)
-        queue.push(x + 1, y);
-        queue.push(x - 1, y);
-        queue.push(x, y + 1);
-        queue.push(x, y - 1);
+        // Add neighbors (4-connectivity) - BFS expands in all directions evenly
+        queue.push({x: x + 1, y});
+        queue.push({x: x - 1, y});
+        queue.push({x, y: y + 1});
+        queue.push({x, y: y - 1});
       }
     }
 
