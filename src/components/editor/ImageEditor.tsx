@@ -1,9 +1,9 @@
 /**
  * V3 Image Editor
- * Main editor layout with history integration
+ * Main editor layout with drawer-based right panel
  */
 
-import React, { useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ProjectProvider, useProject } from '@/contexts/ProjectContext';
 import { HistoryProvider, useHistory } from '@/contexts/HistoryContext';
 import { EditorCanvas } from './EditorCanvas';
@@ -13,12 +13,16 @@ import { HistoryPanel } from './HistoryPanel';
 import { ToolOptions } from './ToolOptions';
 import { StatusBar } from './StatusBar';
 import { TopBar } from './TopBar';
+import { RightPanelBar, PanelType } from './RightPanelBar';
+import { WandSettingsPanel } from './WandSettingsPanel';
+import { ToolSettingsPanel } from './ToolSettingsPanel';
 
 function EditorWithHistory() {
-  const { project, transform, setLayers, setTransform } = useProject();
+  const { project, transform, setLayers, setTransform, activeTool } = useProject();
   const { undo, redo, canUndo, canRedo } = useHistory();
+  const [activePanel, setActivePanel] = useState<PanelType | null>('layers');
 
-  // Handle keyboard shortcuts for undo/redo
+  // Handle keyboard shortcuts for undo/redo and panels
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
@@ -48,11 +52,56 @@ function EditorWithHistory() {
           }
         }
       }
+
+      // Panel shortcuts
+      if (!e.ctrlKey && !e.metaKey) {
+        if (e.key.toLowerCase() === 'l') {
+          setActivePanel(prev => prev === 'layers' ? null : 'layers');
+        }
+      }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [canUndo, canRedo, undo, redo, setLayers, setTransform]);
+
+  // Render the active panel content
+  const renderPanel = () => {
+    switch (activePanel) {
+      case 'layers':
+        return <LayersPanel />;
+      case 'history':
+        return <HistoryPanel />;
+      case 'wand-settings':
+        return <WandSettingsPanel />;
+      case 'tool-settings':
+        return <ToolSettingsPanel />;
+      case 'color':
+        return (
+          <div className="flex flex-col h-full bg-panel-bg border-l border-border w-80">
+            <div className="flex items-center gap-2 px-4 py-3 border-b border-border bg-panel-header">
+              <span className="text-sm font-medium">Color</span>
+            </div>
+            <div className="flex-1 flex items-center justify-center p-4 text-sm text-muted-foreground">
+              Color picker coming soon
+            </div>
+          </div>
+        );
+      case 'settings':
+        return (
+          <div className="flex flex-col h-full bg-panel-bg border-l border-border w-80">
+            <div className="flex items-center gap-2 px-4 py-3 border-b border-border bg-panel-header">
+              <span className="text-sm font-medium">Settings</span>
+            </div>
+            <div className="flex-1 flex items-center justify-center p-4 text-sm text-muted-foreground">
+              Project settings coming soon
+            </div>
+          </div>
+        );
+      default:
+        return null;
+    }
+  };
 
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-background">
@@ -72,11 +121,14 @@ function EditorWithHistory() {
           <EditorCanvas />
         </div>
 
-        {/* Right Panel: Layers */}
-        <LayersPanel />
+        {/* Right Panel Content */}
+        {activePanel && renderPanel()}
 
-        {/* Far Right: History */}
-        <HistoryPanel />
+        {/* Right Panel Bar (icons) */}
+        <RightPanelBar
+          activePanel={activePanel}
+          onPanelChange={setActivePanel}
+        />
       </div>
 
       {/* Status Bar */}

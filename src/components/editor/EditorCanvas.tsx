@@ -209,12 +209,15 @@ export function EditorCanvas() {
         return;
       }
 
+      // Use maxPreviewPixels from toolOptions, fallback to constant
+      const maxPreviewPixels = (toolOptions as any).maxPreviewPixels ?? CANVAS_CONSTANTS.MAX_PREVIEW_PIXELS;
+      
       const result = floodFillPreview(
         compositeData,
         imagePoint.x,
         imagePoint.y,
         toolOptions.tolerance,
-        CANVAS_CONSTANTS.MAX_PREVIEW_PIXELS
+        maxPreviewPixels === 0 ? undefined : maxPreviewPixels
       );
 
       setHoverPreview(result);
@@ -306,9 +309,13 @@ export function EditorCanvas() {
         return;
       }
 
+      // Use maxSegmentPixels from toolOptions (0 = unlimited)
+      const maxSegmentPixels = (toolOptions as any).maxSegmentPixels ?? 0;
+      
       const result = floodFill(compositeData, imagePoint.x, imagePoint.y, {
         tolerance: toolOptions.tolerance,
         contiguous: toolOptions.contiguous,
+        maxPixels: maxSegmentPixels === 0 ? undefined : maxSegmentPixels,
       });
 
       if (result.pixels.length > 0) {
