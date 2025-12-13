@@ -9,14 +9,14 @@ import {
   History,
   Wand2,
   Settings,
-  Palette,
-  Paintbrush,
-  Sliders,
+  Activity,
+  Scan,
+  Sparkles,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
-export type PanelType = 'layers' | 'history' | 'wand-settings' | 'tool-settings' | 'color' | 'settings';
+export type PanelType = 'layers' | 'history' | 'wand-settings' | 'diagnostics' | 'filters' | 'ai-pin';
 
 interface PanelConfig {
   id: PanelType;
@@ -29,9 +29,9 @@ const panels: PanelConfig[] = [
   { id: 'layers', name: 'Layers', icon: Layers, shortcut: 'L' },
   { id: 'history', name: 'History', icon: History, shortcut: 'Y' },
   { id: 'wand-settings', name: 'Magic Wand', icon: Wand2 },
-  { id: 'tool-settings', name: 'Tool Settings', icon: Sliders },
-  { id: 'color', name: 'Color', icon: Palette },
-  { id: 'settings', name: 'Settings', icon: Settings },
+  { id: 'filters', name: 'Image Filters', icon: Scan },
+  { id: 'ai-pin', name: 'AI Segmentation', icon: Sparkles },
+  { id: 'diagnostics', name: 'Diagnostics', icon: Activity },
 ];
 
 interface RightPanelBarProps {
@@ -42,7 +42,7 @@ interface RightPanelBarProps {
 export function RightPanelBar({ activePanel, onPanelChange }: RightPanelBarProps) {
   const handleClick = (panelId: PanelType) => {
     if (activePanel === panelId) {
-      onPanelChange(null); // Toggle off
+      onPanelChange(null);
     } else {
       onPanelChange(panelId);
     }

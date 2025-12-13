@@ -1,0 +1,7 @@
+project_id = "uhleigslswfubwsdlloe"
+
+[functions.ai-segment-detect]
+verify_jwt = false
+
+[functions.ai-segment-dye]
+verify_jwt = false

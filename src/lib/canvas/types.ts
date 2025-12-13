@@ -52,7 +52,7 @@ export interface Color {
 // LAYER SYSTEM TYPES
 // ============================================
 
-export type LayerType = 'raster' | 'text' | 'shape' | 'group';
+export type LayerType = 'raster' | 'text' | 'shape' | 'group' | 'edge-map';
 export type BlendMode = 
   | 'normal' 
   | 'multiply' 
@@ -175,6 +175,49 @@ export interface SegmentationResult {
 }
 
 // ============================================
+// DIAGNOSTICS TYPES
+// ============================================
+
+export interface DiagnosticMetrics {
+  lastPreviewTime: number;
+  lastSegmentTime: number;
+  pixelsProcessed: number;
+  queueSize: number;
+  iterationCount: number;
+  memoryUsed: number;
+}
+
+export interface PerformanceLog {
+  timestamp: number;
+  operation: string;
+  duration: number;
+  pixels: number;
+  details?: Record<string, unknown>;
+}
+
+// ============================================
+// AI PIN SEGMENTATION TYPES
+// ============================================
+
+export interface SegmentPin {
+  id: string;
+  x: number;
+  y: number;
+  label: string;
+  color: Color;
+  status: 'pending' | 'processing' | 'completed' | 'error';
+  maskId?: string;
+}
+
+export interface AISegmentationState {
+  pins: SegmentPin[];
+  isProcessing: boolean;
+  currentStep: 'idle' | 'placing-pins' | 'ai-detection' | 'ai-coloring' | 'mask-extraction' | 'complete';
+  dyedImageData: ImageData | null;
+  detectedObjects: { label: string; bounds: Rectangle }[];
+}
+
+// ============================================
 // TOOL TYPES
 // ============================================
 
@@ -187,7 +230,8 @@ export type ToolType =
   | 'text'
   | 'shape'
   | 'hand'
-  | 'zoom';
+  | 'zoom'
+  | 'ai-pin';
 
 export interface ToolState {
   activeTool: ToolType;
@@ -206,10 +250,55 @@ export interface ToolOptions {
   contiguous: boolean;
   antiAlias: boolean;
   
+  // Advanced Wand
+  maxPreviewPixels: number;
+  maxSegmentPixels: number;
+  connectivity: 4 | 8;
+  sampleSize: 'point' | '3x3' | '5x5';
+  featherRadius: number;
+  expandContract: number;
+  useAlphaChannel: boolean;
+  colorSpace: 'rgb' | 'hsv' | 'lab';
+  
   // Brush/Eraser
   brushColor: Color;
   brushFlow: number;
   brushSpacing: number;
+  
+  // Fill Effect
+  fillEffect: 'solid' | 'gradient' | 'pattern';
+}
+
+// ============================================
+// IMAGE PROCESSING TYPES
+// ============================================
+
+export type EdgeDetectionAlgorithm = 'sobel' | 'laplacian' | 'canny' | 'prewitt' | 'roberts';
+export type ImageFilterType = 
+  | 'grayscale'
+  | 'invert'
+  | 'threshold'
+  | 'gaussian-blur'
+  | 'sharpen'
+  | 'emboss'
+  | 'edge-enhance'
+  | 'posterize'
+  | 'sepia';
+
+export interface EdgeDetectionOptions {
+  algorithm: EdgeDetectionAlgorithm;
+  threshold: number;
+  lowThreshold?: number;
+  highThreshold?: number;
+  kernelSize: 3 | 5;
+  direction?: 'horizontal' | 'vertical' | 'both';
+}
+
+export interface ImageFilterOptions {
+  type: ImageFilterType;
+  intensity: number;
+  threshold?: number;
+  levels?: number;
 }
 
 // ============================================
@@ -304,7 +393,8 @@ export const CANVAS_CONSTANTS = {
   ZOOM_STEP: 0.1,
   PAN_SPEED: 1,
   DEFAULT_TOLERANCE: 32,
-  MAX_PREVIEW_PIXELS: 50000,
+  MAX_PREVIEW_PIXELS: 100000,
+  MAX_SEGMENT_PIXELS: 0, // 0 = unlimited
   PREVIEW_THROTTLE_MS: 16,
 } as const;
 
@@ -345,7 +435,36 @@ export const DEFAULT_TOOL_OPTIONS: ToolOptions = {
   tolerance: 32,
   contiguous: true,
   antiAlias: true,
+  maxPreviewPixels: CANVAS_CONSTANTS.MAX_PREVIEW_PIXELS,
+  maxSegmentPixels: 0,
+  connectivity: 4,
+  sampleSize: 'point',
+  featherRadius: 0,
+  expandContract: 0,
+  useAlphaChannel: false,
+  colorSpace: 'rgb',
   brushColor: DEFAULT_BRUSH_COLOR,
   brushFlow: 100,
   brushSpacing: 25,
+  fillEffect: 'solid',
 };
+
+export const EDGE_ALGORITHMS: { value: EdgeDetectionAlgorithm; label: string }[] = [
+  { value: 'sobel', label: 'Sobel' },
+  { value: 'laplacian', label: 'Laplacian' },
+  { value: 'canny', label: 'Canny' },
+  { value: 'prewitt', label: 'Prewitt' },
+  { value: 'roberts', label: 'Roberts' },
+];
+
+export const IMAGE_FILTERS: { value: ImageFilterType; label: string }[] = [
+  { value: 'grayscale', label: 'Grayscale' },
+  { value: 'invert', label: 'Invert' },
+  { value: 'threshold', label: 'Threshold' },
+  { value: 'gaussian-blur', label: 'Gaussian Blur' },
+  { value: 'sharpen', label: 'Sharpen' },
+  { value: 'emboss', label: 'Emboss' },
+  { value: 'edge-enhance', label: 'Edge Enhance' },
+  { value: 'posterize', label: 'Posterize' },
+  { value: 'sepia', label: 'Sepia' },
+];
