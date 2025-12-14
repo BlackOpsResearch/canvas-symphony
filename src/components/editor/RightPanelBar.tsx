@@ -16,7 +16,7 @@ import {
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
-export type PanelType = 'layers' | 'history' | 'wand-settings' | 'diagnostics' | 'filters' | 'ai-pin';
+export type PanelType = 'layers' | 'history' | 'wand-settings' | 'tool-settings' | 'color' | 'settings' | 'diagnostics' | 'filters' | 'ai-pin';
 
 interface PanelConfig {
   id: PanelType;
