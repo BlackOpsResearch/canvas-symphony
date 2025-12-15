@@ -125,6 +125,7 @@ export interface Layer {
 
 export type ModifierType = 
   | 'transparency-mask'
+  | 'segment-cutout'
   | 'color-adjustment'
   | 'blur'
   | 'sharpen'
@@ -143,6 +144,17 @@ export interface TransparencyMaskModifier extends Modifier {
   parameters: {
     mask: Uint8ClampedArray;
     bounds: Rectangle;
+    inverted: boolean;
+  };
+}
+
+export interface SegmentCutoutModifier extends Modifier {
+  type: 'segment-cutout';
+  parameters: {
+    mask: Uint8ClampedArray;
+    width: number;
+    height: number;
+    maskOpacity: number; // 0 = fully transparent (cutout), 100 = full original
     inverted: boolean;
   };
 }
@@ -259,6 +271,14 @@ export interface ToolOptions {
   expandContract: number;
   useAlphaChannel: boolean;
   colorSpace: 'rgb' | 'hsv' | 'lab';
+  
+  // Wand Visualization
+  selectionBorderColor: Color;
+  selectionBorderWidth: number;
+  selectionBorderPattern: 'solid' | 'dashed' | 'marching-ants';
+  selectionFillColor: Color;
+  selectionFillOpacity: number;
+  selectionFillPattern: 'none' | 'solid' | 'hatched' | 'dots';
   
   // Brush/Eraser
   brushColor: Color;
@@ -443,6 +463,12 @@ export const DEFAULT_TOOL_OPTIONS: ToolOptions = {
   expandContract: 0,
   useAlphaChannel: false,
   colorSpace: 'rgb',
+  selectionBorderColor: { r: 255, g: 255, b: 255, a: 1 },
+  selectionBorderWidth: 2,
+  selectionBorderPattern: 'marching-ants',
+  selectionFillColor: { r: 0, g: 150, b: 255, a: 0.3 },
+  selectionFillOpacity: 30,
+  selectionFillPattern: 'solid',
   brushColor: DEFAULT_BRUSH_COLOR,
   brushFlow: 100,
   brushSpacing: 25,

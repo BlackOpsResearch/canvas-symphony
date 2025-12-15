@@ -2,6 +2,10 @@
  * V3 Editor Canvas
  * Main canvas with pan/zoom, magic wand, brush, eraser
  * Controls: Right-click+drag=pan, Right-click+scroll=zoom, Scroll=tolerance
+ * Wand clicks:
+ *   - Left click: new segment -> new layer
+ *   - Shift+click: add to pending segments (merged into 1 layer on release)
+ *   - Alt+click: add as cutout modifier to clicked layer (non-destructive transparency)
  */
 
 import React, { useRef, useEffect, useCallback, useState } from 'react';
@@ -10,10 +14,10 @@ import { useHistory } from '@/contexts/HistoryContext';
 import { coordinateSystem } from '@/lib/canvas/CoordinateSystem';
 import { RenderPipeline } from '@/lib/canvas/RenderPipeline';
 import { floodFillPreview, floodFill } from '@/lib/canvas/FloodFill';
-import { createLayerFromSegment, compositeLayers } from '@/lib/canvas/LayerUtils';
+import { createLayerFromSegment, mergeSegmentations, createSegmentCutoutModifier, compositeLayers } from '@/lib/canvas/LayerUtils';
 import { BrushEngine } from '@/lib/canvas/BrushEngine';
 import { logPerformance } from './DiagnosticsPanel';
-import { CANVAS_CONSTANTS, SegmentPin } from '@/lib/canvas/types';
+import { CANVAS_CONSTANTS, SegmentPin, SegmentationResult } from '@/lib/canvas/types';
 import { toast } from 'sonner';
 
 interface EditorCanvasProps {
@@ -53,6 +57,7 @@ export function EditorCanvas({ aiPins = [], isPinMode = false, onAddPin }: Edito
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
   const [isRightMouseDown, setIsRightMouseDown] = useState(false);
+  const [pendingSegments, setPendingSegments] = useState<SegmentationResult[]>([]);
 
   // Initialize canvas
   useEffect(() => {
@@ -250,17 +255,45 @@ export function EditorCanvas({ aiPins = [], isPinMode = false, onAddPin }: Edito
 
       if (result.pixels.length > 0) {
         if (e.altKey) {
-          pushSnapshot('Extract selection', project.layers, project.selectedLayerIds, project.activeLayerId, transform);
+          // Alt+click: Add segment as cutout modifier to active layer
+          const activeLayer = getActiveLayer();
+          if (!activeLayer) {
+            toast.error('Select a layer to apply cutout modifier');
+            return;
+          }
+          pushSnapshot('Add cutout modifier', project.layers, project.selectedLayerIds, project.activeLayerId, transform);
+          const modifier = createSegmentCutoutModifier(result, compositeData.width, compositeData.height, 0);
+          updateLayer(activeLayer.id, { 
+            modifiers: [...activeLayer.modifiers, modifier] 
+          });
+          setActiveSelection(null);
+          toast.success('Added cutout modifier to layer');
+        } else if (e.shiftKey) {
+          // Shift+click: Add to pending segments for multi-select
+          setPendingSegments(prev => [...prev, result]);
+          setActiveSelection(result);
+          toast.info(`${pendingSegments.length + 1} segments selected (Shift+click more or click without Shift to create layer)`);
+        } else if (pendingSegments.length > 0) {
+          // Normal click with pending segments: merge all into one layer
+          const allSegments = [...pendingSegments, result];
+          const merged = mergeSegmentations(allSegments, compositeData.width, compositeData.height);
+          pushSnapshot('Create merged segment layer', project.layers, project.selectedLayerIds, project.activeLayerId, transform);
+          const newLayer = createLayerFromSegment(`Merged Segment ${project.layers.length + 1}`, compositeData, merged);
+          addLayer(newLayer);
+          setPendingSegments([]);
+          setActiveSelection(null);
+          toast.success(`Created layer from ${allSegments.length} segments`);
+        } else {
+          // Normal click: create new layer from single segment
+          pushSnapshot('Create segment layer', project.layers, project.selectedLayerIds, project.activeLayerId, transform);
           const newLayer = createLayerFromSegment(`Segment ${project.layers.length + 1}`, compositeData, result);
           addLayer(newLayer);
           setActiveSelection(null);
-          toast.success('Extracted to new layer');
-        } else {
-          setActiveSelection(result);
+          toast.success('Created new layer from segment');
         }
       }
     }
-  }, [activeTool, isPinMode, project, toolOptions, transform, getCompositeImageData, getActiveLayer, worldToImage, addLayer, pushSnapshot, setActiveSelection, setIsPainting, onAddPin]);
+  }, [activeTool, isPinMode, project, toolOptions, transform, getCompositeImageData, getActiveLayer, worldToImage, addLayer, updateLayer, pushSnapshot, setActiveSelection, setIsPainting, onAddPin, pendingSegments]);
 
   const handleMouseUp = useCallback((e: React.MouseEvent) => {
     if (e.button === 2) setIsRightMouseDown(false);
@@ -359,9 +392,17 @@ export function EditorCanvas({ aiPins = [], isPinMode = false, onAddPin }: Edito
       </div>
 
       {activeTool === 'magic-wand' && (
-        <div className="absolute top-4 left-4 px-3 py-1.5 bg-panel-bg/90 backdrop-blur-sm rounded-md border border-border">
-          <span className="font-mono-precision text-xs text-muted-foreground">
+        <div className="absolute top-4 left-4 px-3 py-1.5 bg-panel-bg/90 backdrop-blur-sm rounded-md border border-border space-y-1">
+          <span className="font-mono-precision text-xs text-muted-foreground block">
             Tolerance: {toolOptions.tolerance} · Scroll to adjust
+          </span>
+          {pendingSegments.length > 0 && (
+            <span className="font-mono-precision text-xs text-primary block">
+              {pendingSegments.length} segment{pendingSegments.length > 1 ? 's' : ''} pending (Shift+click to add more)
+            </span>
+          )}
+          <span className="text-[10px] text-muted-foreground/70 block">
+            Click: new layer · Shift: multi-select · Alt: cutout
           </span>
         </div>
       )}
