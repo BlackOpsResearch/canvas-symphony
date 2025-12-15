@@ -237,6 +237,8 @@ export type ToolType =
   | 'select'
   | 'move'
   | 'magic-wand'
+  | 'lasso'
+  | 'magnetic-lasso'
   | 'brush'
   | 'eraser'
   | 'text'
@@ -244,6 +246,125 @@ export type ToolType =
   | 'hand'
   | 'zoom'
   | 'ai-pin';
+
+// ============================================
+// LASSO TYPES
+// ============================================
+
+export type LassoVariation = 
+  | 'classic-dijkstra'      // Pure edge-following with Dijkstra
+  | 'photoshop-style'       // Auto-anchoring based on distance/time
+  | 'elastic-progressive'   // Progressive anchor strength
+  | 'predictive-directional'; // Movement pattern analysis
+
+export type LassoAnchorMode = 
+  | 'manual'
+  | 'distance'
+  | 'time'
+  | 'hybrid'
+  | 'elastic'
+  | 'edge-quality'
+  | 'predictive';
+
+export type EdgeMethod = 
+  | 'sobel'
+  | 'prewitt'
+  | 'scharr'
+  | 'roberts'
+  | 'laplacian'
+  | 'canny';
+
+export interface LassoAnchor {
+  id: string;
+  point: Point;
+  strength: number;        // 0.0 (elastic) to 1.0 (locked)
+  timestamp: number;
+  isEdgeSnapped: boolean;
+  edgeQuality: number;
+}
+
+export interface LassoPath {
+  points: Point[];
+  anchors: LassoAnchor[];
+  isClosed: boolean;
+  totalLength: number;
+}
+
+export interface LazyCursor {
+  outerPosition: Point;    // Exact mouse position
+  innerPosition: Point;    // Stabilized position
+  radius: number;
+  smoothingFactor: number;
+}
+
+export interface LassoOptions {
+  // Variation
+  variation: LassoVariation;
+  
+  // Cursor Settings
+  cursorRadius: number;          // 5-50px
+  edgeSearchRadius: number;      // 5-50px
+  smoothingFactor: number;       // 0.1-1.0
+  trajectoryLookback: number;    // 2-15 points
+  
+  // Edge Detection
+  edgeMethod: EdgeMethod;
+  edgeSensitivity: number;       // 0-100
+  edgeThreshold: number;
+  hysteresisThreshold: number;
+  nonMaxSuppression: boolean;
+  gaussianBlur: boolean;
+  gaussianRadius: number;
+  adaptiveEdge: boolean;
+  
+  // Anchoring
+  anchorMode: LassoAnchorMode;
+  autoAnchorDistance: number;
+  autoAnchorTimeInterval: number;
+  anchorPositionOnPath: number;  // 0-100%
+  elasticZoneLength: number;
+  elasticStrengthCurve: 'linear' | 'exponential' | 'ease-in-out';
+  
+  // Pathfinding
+  pathfindingAlgorithm: 'dijkstra' | 'astar';
+  neighborMode: 4 | 8;
+  directionContinuityCost: number;
+  cursorInfluence: number;       // 0-100
+  
+  // Prediction (for predictive-directional)
+  predictionConeAngle: number;
+  predictionConfidenceWeight: number;
+  curveConsistencyWindow: number;
+  
+  // Visualization
+  pathColor: string;
+  nodeColor: string;
+  nodeSize: number;
+  showEdgeTrailNode: boolean;
+  showElasticGradient: boolean;
+  showPredictionZone: boolean;
+  showMetricsOverlay: boolean;
+}
+
+export interface LassoState {
+  isActive: boolean;
+  currentPath: LassoPath | null;
+  lazyCursor: LazyCursor;
+  previewPath: Point[];
+  pendingSegments: LassoPath[];
+  edgeMap: ImageData | null;
+  gradientMap: { magnitude: Float32Array; direction: Float32Array } | null;
+  metrics: LassoMetrics;
+}
+
+export interface LassoMetrics {
+  fps: number;
+  pathComputationTime: number;
+  totalPathPoints: number;
+  anchorCount: number;
+  edgeQuality: number;
+  cursorSpeed: number;
+}
 
 export interface ToolState {
   activeTool: ToolType;

@@ -1,6 +1,6 @@
 /**
  * V3 Editor Toolbar
- * Left-side tool selection with brush/eraser
+ * Left-side tool selection with brush/eraser and lasso tools
  */
 
 import React from 'react';
@@ -16,6 +16,8 @@ import {
   Square, 
   Hand, 
   ZoomIn,
+  Lasso,
+  Magnet,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -32,6 +34,8 @@ const tools: ToolConfig[] = [
   { id: 'select', name: 'Select', icon: MousePointer2, shortcut: 'V', enabled: true },
   { id: 'move', name: 'Move', icon: Move, shortcut: 'M', enabled: true },
   { id: 'magic-wand', name: 'Magic Wand', icon: Wand2, shortcut: 'W', enabled: true },
+  { id: 'lasso', name: 'Freehand Lasso', icon: Lasso, shortcut: 'L', enabled: true },
+  { id: 'magnetic-lasso', name: 'Magnetic Lasso', icon: Magnet, shortcut: 'A', enabled: true },
   { id: 'brush', name: 'Brush', icon: Paintbrush, shortcut: 'B', enabled: true },
   { id: 'eraser', name: 'Eraser', icon: Eraser, shortcut: 'E', enabled: true },
   { id: 'text', name: 'Text', icon: Type, shortcut: 'T', enabled: false },
