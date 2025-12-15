@@ -36,6 +36,24 @@ export function WandSettingsPanel() {
     expandContract: (toolOptions as any).expandContract ?? 0,
     useAlphaChannel: (toolOptions as any).useAlphaChannel ?? false,
     colorSpace: (toolOptions as any).colorSpace ?? 'rgb',
+    // Visualization
+    selectionBorderColor: (toolOptions as any).selectionBorderColor ?? { r: 255, g: 255, b: 255, a: 1 },
+    selectionBorderWidth: (toolOptions as any).selectionBorderWidth ?? 2,
+    selectionBorderPattern: (toolOptions as any).selectionBorderPattern ?? 'marching-ants',
+    selectionFillColor: (toolOptions as any).selectionFillColor ?? { r: 0, g: 150, b: 255, a: 0.3 },
+    selectionFillOpacity: (toolOptions as any).selectionFillOpacity ?? 30,
+    selectionFillPattern: (toolOptions as any).selectionFillPattern ?? 'solid',
+  };
+
+  const colorToHex = (color: { r: number; g: number; b: number }) => {
+    return `#${color.r.toString(16).padStart(2, '0')}${color.g.toString(16).padStart(2, '0')}${color.b.toString(16).padStart(2, '0')}`;
+  };
+
+  const hexToColor = (hex: string) => {
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    return { r, g, b, a: 1 };
   };
 
   const updateWandOption = (key: string, value: any) => {
@@ -302,15 +320,126 @@ export function WandSettingsPanel() {
           </div>
         </div>
 
+        {/* Visualization Settings */}
+        <div className="space-y-4">
+          <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-2">
+            <Maximize2 className="w-3.5 h-3.5" />
+            Visualization
+          </h3>
+
+          {/* Border Color */}
+          <div className="space-y-2">
+            <Label className="text-xs text-muted-foreground">Border Color</Label>
+            <div className="flex gap-2 items-center">
+              <input
+                type="color"
+                value={colorToHex(wandOptions.selectionBorderColor)}
+                onChange={(e) => updateWandOption('selectionBorderColor', hexToColor(e.target.value))}
+                className="w-8 h-8 rounded cursor-pointer border border-border"
+              />
+              <span className="text-xs font-mono-precision text-muted-foreground">
+                {colorToHex(wandOptions.selectionBorderColor)}
+              </span>
+            </div>
+          </div>
+
+          {/* Border Width */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs text-muted-foreground">Border Width</Label>
+              <span className="text-xs font-mono-precision text-muted-foreground">
+                {wandOptions.selectionBorderWidth}px
+              </span>
+            </div>
+            <Slider
+              value={[wandOptions.selectionBorderWidth]}
+              min={0}
+              max={10}
+              step={1}
+              onValueChange={(v) => updateWandOption('selectionBorderWidth', v[0])}
+            />
+          </div>
+
+          {/* Border Pattern */}
+          <div className="space-y-2">
+            <Label className="text-xs text-muted-foreground">Border Pattern</Label>
+            <Select
+              value={wandOptions.selectionBorderPattern}
+              onValueChange={(v) => updateWandOption('selectionBorderPattern', v)}
+            >
+              <SelectTrigger className="h-8 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="solid" className="text-xs">Solid</SelectItem>
+                <SelectItem value="dashed" className="text-xs">Dashed</SelectItem>
+                <SelectItem value="marching-ants" className="text-xs">Marching Ants</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Fill Color */}
+          <div className="space-y-2">
+            <Label className="text-xs text-muted-foreground">Fill Color</Label>
+            <div className="flex gap-2 items-center">
+              <input
+                type="color"
+                value={colorToHex(wandOptions.selectionFillColor)}
+                onChange={(e) => updateWandOption('selectionFillColor', { ...hexToColor(e.target.value), a: wandOptions.selectionFillOpacity / 100 })}
+                className="w-8 h-8 rounded cursor-pointer border border-border"
+              />
+              <span className="text-xs font-mono-precision text-muted-foreground">
+                {colorToHex(wandOptions.selectionFillColor)}
+              </span>
+            </div>
+          </div>
+
+          {/* Fill Opacity */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs text-muted-foreground">Fill Opacity</Label>
+              <span className="text-xs font-mono-precision text-muted-foreground">
+                {wandOptions.selectionFillOpacity}%
+              </span>
+            </div>
+            <Slider
+              value={[wandOptions.selectionFillOpacity]}
+              min={0}
+              max={100}
+              step={5}
+              onValueChange={(v) => updateWandOption('selectionFillOpacity', v[0])}
+            />
+          </div>
+
+          {/* Fill Pattern */}
+          <div className="space-y-2">
+            <Label className="text-xs text-muted-foreground">Fill Pattern</Label>
+            <Select
+              value={wandOptions.selectionFillPattern}
+              onValueChange={(v) => updateWandOption('selectionFillPattern', v)}
+            >
+              <SelectTrigger className="h-8 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none" className="text-xs">None</SelectItem>
+                <SelectItem value="solid" className="text-xs">Solid</SelectItem>
+                <SelectItem value="hatched" className="text-xs">Hatched</SelectItem>
+                <SelectItem value="dots" className="text-xs">Dots</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
         {/* Info */}
         <div className="p-3 rounded-lg bg-muted/50 border border-border">
           <div className="flex gap-2">
             <Info className="w-4 h-4 text-primary shrink-0 mt-0.5" />
             <div className="text-[10px] text-muted-foreground space-y-1">
-              <p><strong>Click:</strong> Create selection</p>
-              <p><strong>Alt+Click:</strong> Extract to new layer</p>
-              <p><strong>Shift+Click:</strong> Add to selection</p>
-              <p><strong>Ctrl+Click:</strong> Subtract from selection</p>
+              <p><strong>Click:</strong> Create segment → new layer</p>
+              <p><strong>Shift+Click:</strong> Multi-select → merged layer</p>
+              <p><strong>Alt+Click:</strong> Cutout modifier (non-destructive)</p>
+              <p><strong>Scroll:</strong> Adjust tolerance</p>
             </div>
           </div>
         </div>

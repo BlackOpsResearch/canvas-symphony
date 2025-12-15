@@ -11,6 +11,7 @@ import {
   SegmentationResult,
   LayerEffect,
   Color,
+  Modifier,
   DEFAULT_LAYER_TRANSFORM,
 } from './types';
 
@@ -69,39 +70,26 @@ export function createLayerFromImageData(
 }
 
 /**
- * Create layer from segmentation result
+ * Create layer from segmentation result - FULL CANVAS SIZE (no cropping)
  */
 export function createLayerFromSegment(
   name: string,
   sourceImageData: ImageData,
   segmentation: SegmentationResult
 ): Layer {
-  const { mask, bounds } = segmentation;
+  const { mask } = segmentation;
   
-  const extractedData = new ImageData(bounds.width, bounds.height);
+  // Create full-size layer, not cropped to bounds
+  const extractedData = new ImageData(sourceImageData.width, sourceImageData.height);
   
-  for (let y = 0; y < bounds.height; y++) {
-    for (let x = 0; x < bounds.width; x++) {
-      const sourceX = bounds.x + x;
-      const sourceY = bounds.y + y;
-      
-      if (sourceX < 0 || sourceX >= sourceImageData.width ||
-          sourceY < 0 || sourceY >= sourceImageData.height) {
-        continue;
-      }
-      
-      const sourceIndex = sourceY * sourceImageData.width + sourceX;
-      const maskValue = mask[sourceIndex];
-      
-      if (maskValue > 0) {
-        const sourceDataIndex = sourceIndex * 4;
-        const destIndex = (y * bounds.width + x) * 4;
-        
-        extractedData.data[destIndex] = sourceImageData.data[sourceDataIndex];
-        extractedData.data[destIndex + 1] = sourceImageData.data[sourceDataIndex + 1];
-        extractedData.data[destIndex + 2] = sourceImageData.data[sourceDataIndex + 2];
-        extractedData.data[destIndex + 3] = (sourceImageData.data[sourceDataIndex + 3] * maskValue) / 255;
-      }
+  for (let i = 0; i < mask.length; i++) {
+    const maskValue = mask[i];
+    if (maskValue > 0) {
+      const dataIndex = i * 4;
+      extractedData.data[dataIndex] = sourceImageData.data[dataIndex];
+      extractedData.data[dataIndex + 1] = sourceImageData.data[dataIndex + 1];
+      extractedData.data[dataIndex + 2] = sourceImageData.data[dataIndex + 2];
+      extractedData.data[dataIndex + 3] = (sourceImageData.data[dataIndex + 3] * maskValue) / 255;
     }
   }
   
@@ -114,12 +102,81 @@ export function createLayerFromSegment(
     opacity: 1,
     blendMode: 'normal',
     imageData: extractedData,
-    bounds,
+    bounds: { x: 0, y: 0, width: sourceImageData.width, height: sourceImageData.height },
     transform: { ...DEFAULT_LAYER_TRANSFORM },
     modifiers: [],
     effects: [],
     createdAt: Date.now(),
     modifiedAt: Date.now(),
+  };
+}
+
+/**
+ * Create segment cutout modifier for non-destructive transparency
+ */
+export function createSegmentCutoutModifier(
+  segmentation: SegmentationResult,
+  width: number,
+  height: number,
+  maskOpacity: number = 0 // 0 = fully transparent (cutout)
+): Modifier {
+  return {
+    id: uuidv4(),
+    type: 'segment-cutout',
+    enabled: true,
+    opacity: 100,
+    parameters: {
+      mask: new Uint8ClampedArray(segmentation.mask),
+      width,
+      height,
+      maskOpacity,
+      inverted: false,
+    },
+  };
+}
+
+/**
+ * Merge multiple segmentation results into one
+ */
+export function mergeSegmentations(
+  segments: SegmentationResult[],
+  width: number,
+  height: number
+): SegmentationResult {
+  const mergedMask = new Uint8ClampedArray(width * height);
+  const mergedPixels: number[] = [];
+  const pixelSet = new Set<number>();
+  
+  let minX = width, minY = height, maxX = 0, maxY = 0;
+  
+  for (const seg of segments) {
+    for (const pixelIndex of seg.pixels) {
+      if (!pixelSet.has(pixelIndex)) {
+        pixelSet.add(pixelIndex);
+        mergedPixels.push(pixelIndex);
+        mergedMask[pixelIndex] = Math.max(mergedMask[pixelIndex], seg.mask[pixelIndex]);
+        
+        const x = pixelIndex % width;
+        const y = Math.floor(pixelIndex / width);
+        minX = Math.min(minX, x);
+        minY = Math.min(minY, y);
+        maxX = Math.max(maxX, x);
+        maxY = Math.max(maxY, y);
+      }
+    }
+  }
+  
+  return {
+    mask: mergedMask,
+    bounds: { x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1 },
+    pixels: mergedPixels,
+    hitLimit: segments.some(s => s.hitLimit),
+    metadata: {
+      seedColor: segments[0]?.metadata.seedColor || [0, 0, 0, 255],
+      tolerance: segments[0]?.metadata.tolerance || 32,
+      pixelCount: mergedPixels.length,
+      processingTime: segments.reduce((sum, s) => sum + s.metadata.processingTime, 0),
+    },
   };
 }
 
