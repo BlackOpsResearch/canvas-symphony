@@ -165,14 +165,14 @@ export function WandSettingsPanel() {
             <div className="flex items-center justify-between">
               <Label className="text-xs text-muted-foreground">Preview Limit</Label>
               <span className="text-xs font-mono-precision text-muted-foreground">
-                {wandOptions.maxPreviewPixels === 0 ? 'Full' : wandOptions.maxPreviewPixels.toLocaleString()}
+                {wandOptions.maxPreviewPixels === 0 ? 'Full Doc' : wandOptions.maxPreviewPixels.toLocaleString()}
               </span>
             </div>
             <Slider
               value={[wandOptions.maxPreviewPixels]}
               min={0}
-              max={500000}
-              step={10000}
+              max={5000000}
+              step={50000}
               onValueChange={(v) => updateWandOption('maxPreviewPixels', v[0])}
             />
             <p className="text-[10px] text-muted-foreground/70">
@@ -185,13 +185,13 @@ export function WandSettingsPanel() {
             <div className="flex items-center justify-between">
               <Label className="text-xs text-muted-foreground">Segment Limit</Label>
               <span className="text-xs font-mono-precision text-muted-foreground">
-                {wandOptions.maxSegmentPixels === 0 ? 'Unlimited' : wandOptions.maxSegmentPixels.toLocaleString()}
+                {wandOptions.maxSegmentPixels === 0 ? 'Full Doc' : wandOptions.maxSegmentPixels.toLocaleString()}
               </span>
             </div>
             <Slider
               value={[wandOptions.maxSegmentPixels]}
               min={0}
-              max={2000000}
+              max={5000000}
               step={50000}
               onValueChange={(v) => updateWandOption('maxSegmentPixels', v[0])}
             />

@@ -16,11 +16,44 @@ import { TopBar } from './TopBar';
 import { RightPanelBar, PanelType } from './RightPanelBar';
 import { WandSettingsPanel } from './WandSettingsPanel';
 import { ToolSettingsPanel } from './ToolSettingsPanel';
+import { LassoSettingsPanel } from './LassoSettingsPanel';
+import { DiagnosticsPanel } from './DiagnosticsPanel';
+import { ImageFiltersPanel } from './ImageFiltersPanel';
+import { AIPinPanel } from './AIPinPanel';
+import { LassoOptions } from '@/lib/canvas/types';
+import { DEFAULT_LASSO_OPTIONS } from '@/lib/canvas/LassoEngine';
 
 function EditorWithHistory() {
   const { project, transform, setLayers, setTransform, activeTool } = useProject();
   const { undo, redo, canUndo, canRedo } = useHistory();
   const [activePanel, setActivePanel] = useState<PanelType | null>('layers');
+  const [lassoOptions, setLassoOptions] = useState<LassoOptions>(DEFAULT_LASSO_OPTIONS);
+  const [aiPins, setAiPins] = useState<import('@/lib/canvas/types').SegmentPin[]>([]);
+  const [isPinMode, setIsPinMode] = useState(false);
+
+  const handleLassoOptionsChange = (options: Partial<LassoOptions>) => {
+    setLassoOptions(prev => ({ ...prev, ...options }));
+  };
+
+  const handleAddPin = (x: number, y: number) => {
+    const pinColors = [
+      { r: 255, g: 0, b: 0, a: 1 },
+      { r: 0, g: 255, b: 0, a: 1 },
+      { r: 0, g: 0, b: 255, a: 1 },
+      { r: 255, g: 255, b: 0, a: 1 },
+      { r: 255, g: 0, b: 255, a: 1 },
+      { r: 0, g: 255, b: 255, a: 1 },
+    ];
+    const newPin: import('@/lib/canvas/types').SegmentPin = {
+      id: crypto.randomUUID(),
+      x,
+      y,
+      label: `Pin ${aiPins.length + 1}`,
+      color: pinColors[aiPins.length % pinColors.length],
+      status: 'pending',
+    };
+    setAiPins(prev => [...prev, newPin]);
+  };
 
   // Handle keyboard shortcuts for undo/redo and panels
   useEffect(() => {
@@ -76,6 +109,28 @@ function EditorWithHistory() {
         return <WandSettingsPanel />;
       case 'tool-settings':
         return <ToolSettingsPanel />;
+      case 'lasso-settings':
+        return (
+          <div className="flex flex-col h-full bg-panel-bg border-l border-border w-80">
+            <LassoSettingsPanel 
+              options={lassoOptions} 
+              onOptionsChange={handleLassoOptionsChange}
+            />
+          </div>
+        );
+      case 'diagnostics':
+        return <DiagnosticsPanel />;
+      case 'filters':
+        return <ImageFiltersPanel />;
+      case 'ai-pin':
+        return (
+          <AIPinPanel 
+            pins={aiPins}
+            onPinsChange={setAiPins}
+            onPinModeChange={setIsPinMode}
+            isPinMode={isPinMode}
+          />
+        );
       case 'color':
         return (
           <div className="flex flex-col h-full bg-panel-bg border-l border-border w-80">
@@ -118,7 +173,12 @@ function EditorWithHistory() {
 
         {/* Canvas Area */}
         <div className="flex-1 relative">
-          <EditorCanvas />
+          <EditorCanvas 
+            lassoOptions={lassoOptions} 
+            aiPins={aiPins}
+            isPinMode={isPinMode}
+            onAddPin={handleAddPin}
+          />
         </div>
 
         {/* Right Panel Content */}

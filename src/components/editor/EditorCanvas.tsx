@@ -16,22 +16,25 @@ import { RenderPipeline } from '@/lib/canvas/RenderPipeline';
 import { floodFillPreview, floodFill } from '@/lib/canvas/FloodFill';
 import { createLayerFromSegment, mergeSegmentations, createSegmentCutoutModifier, compositeLayers } from '@/lib/canvas/LayerUtils';
 import { BrushEngine } from '@/lib/canvas/BrushEngine';
+import { LassoEngine, lassoPathToMask, DEFAULT_LASSO_OPTIONS } from '@/lib/canvas/LassoEngine';
 import { logPerformance } from './DiagnosticsPanel';
-import { CANVAS_CONSTANTS, SegmentPin, SegmentationResult } from '@/lib/canvas/types';
+import { CANVAS_CONSTANTS, SegmentPin, SegmentationResult, LassoOptions, LassoPath, Point, LassoAnchor } from '@/lib/canvas/types';
 import { toast } from 'sonner';
 
 interface EditorCanvasProps {
   aiPins?: SegmentPin[];
   isPinMode?: boolean;
   onAddPin?: (x: number, y: number) => void;
+  lassoOptions?: LassoOptions;
 }
 
-export function EditorCanvas({ aiPins = [], isPinMode = false, onAddPin }: EditorCanvasProps) {
+export function EditorCanvas({ aiPins = [], isPinMode = false, onAddPin, lassoOptions }: EditorCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const brushCanvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const renderPipelineRef = useRef<RenderPipeline | null>(null);
   const brushEngineRef = useRef<BrushEngine | null>(null);
+  const lassoEngineRef = useRef<LassoEngine | null>(null);
   
   const {
     project,
@@ -58,6 +61,12 @@ export function EditorCanvas({ aiPins = [], isPinMode = false, onAddPin }: Edito
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
   const [isRightMouseDown, setIsRightMouseDown] = useState(false);
   const [pendingSegments, setPendingSegments] = useState<SegmentationResult[]>([]);
+  const [lassoState, setLassoState] = useState<{
+    isActive: boolean;
+    path: LassoPath | null;
+    previewPath: Point[];
+    anchors: LassoAnchor[];
+  }>({ isActive: false, path: null, previewPath: [], anchors: [] });
 
   // Initialize canvas
   useEffect(() => {
@@ -105,6 +114,43 @@ export function EditorCanvas({ aiPins = [], isPinMode = false, onAddPin }: Edito
     };
   }, [project.layers.length]);
 
+  // Define utility functions first before effects use them
+  const getCompositeImageData = useCallback((): ImageData | null => {
+    if (project.layers.length === 0) return null;
+    const baseLayer = project.layers[0];
+    if (!baseLayer?.imageData) return null;
+    return compositeLayers(project.layers, baseLayer.imageData.width, baseLayer.imageData.height);
+  }, [project.layers]);
+
+  const worldToImage = useCallback((worldX: number, worldY: number, imageData: ImageData) => ({
+    x: Math.floor(worldX + imageData.width / 2),
+    y: Math.floor(worldY + imageData.height / 2),
+  }), []);
+
+  // Initialize lasso engine
+  useEffect(() => {
+    if (!lassoEngineRef.current) {
+      lassoEngineRef.current = new LassoEngine(lassoOptions || DEFAULT_LASSO_OPTIONS);
+    }
+  }, []);
+
+  // Update lasso options
+  useEffect(() => {
+    if (lassoEngineRef.current && lassoOptions) {
+      lassoEngineRef.current.setOptions(lassoOptions);
+    }
+  }, [lassoOptions]);
+
+  // Compute edge map when image changes and lasso tool is active
+  useEffect(() => {
+    if ((activeTool === 'lasso' || activeTool === 'magnetic-lasso') && lassoEngineRef.current) {
+      const compositeData = getCompositeImageData();
+      if (compositeData) {
+        lassoEngineRef.current.computeEdgeMap(compositeData);
+      }
+    }
+  }, [activeTool, project.layers, getCompositeImageData]);
+
   useEffect(() => {
     const baseLayer = project.layers[0];
     if (baseLayer?.imageData && !brushEngineRef.current) {
@@ -124,23 +170,169 @@ export function EditorCanvas({ aiPins = [], isPinMode = false, onAddPin }: Edito
     let animationId: number;
     const render = () => {
       renderPipelineRef.current?.render(project.layers, hoverPreview, activeSelection);
+      
+      // Render lasso path on brush canvas
+      renderLassoPath();
+      
       animationId = requestAnimationFrame(render);
     };
     render();
     return () => cancelAnimationFrame(animationId);
-  }, [project.layers, hoverPreview, activeSelection]);
+  }, [project.layers, hoverPreview, activeSelection, lassoState]);
 
-  const getCompositeImageData = useCallback((): ImageData | null => {
-    if (project.layers.length === 0) return null;
-    const baseLayer = project.layers[0];
-    if (!baseLayer?.imageData) return null;
-    return compositeLayers(project.layers, baseLayer.imageData.width, baseLayer.imageData.height);
-  }, [project.layers]);
-
-  const worldToImage = useCallback((worldX: number, worldY: number, imageData: ImageData) => ({
-    x: Math.floor(worldX + imageData.width / 2),
-    y: Math.floor(worldY + imageData.height / 2),
-  }), []);
+  // Lasso path rendering
+  const renderLassoPath = useCallback(() => {
+    const brushCanvas = brushCanvasRef.current;
+    if (!brushCanvas) return;
+    
+    const ctx = brushCanvas.getContext('2d');
+    if (!ctx) return;
+    
+    const dpr = window.devicePixelRatio || 1;
+    ctx.clearRect(0, 0, brushCanvas.width, brushCanvas.height);
+    
+    if (!lassoState.isActive && lassoState.path === null) return;
+    
+    const options = lassoOptions || DEFAULT_LASSO_OPTIONS;
+    const compositeData = getCompositeImageData();
+    if (!compositeData) return;
+    
+    ctx.save();
+    ctx.scale(dpr, dpr);
+    
+    // Transform to screen coordinates
+    const imageToScreen = (point: Point): Point => {
+      const worldX = point.x - compositeData.width / 2;
+      const worldY = point.y - compositeData.height / 2;
+      return coordinateSystem.worldToScreen(worldX, worldY);
+    };
+    
+    // Draw main path
+    const currentPath = lassoEngineRef.current?.getState().currentPath;
+    if (currentPath && currentPath.points.length > 1) {
+      ctx.beginPath();
+      const start = imageToScreen(currentPath.points[0]);
+      ctx.moveTo(start.x, start.y);
+      
+      // Draw with elastic gradient if enabled
+      if (options.showElasticGradient && options.variation === 'elastic-progressive') {
+        for (let i = 1; i < currentPath.points.length; i++) {
+          const pt = imageToScreen(currentPath.points[i]);
+          // Calculate gradient based on position
+          const t = i / currentPath.points.length;
+          ctx.strokeStyle = `hsl(${60 + t * 60}, 100%, 50%)`; // Yellow to green
+          ctx.lineWidth = 2;
+          ctx.lineTo(pt.x, pt.y);
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(pt.x, pt.y);
+        }
+      } else {
+        for (let i = 1; i < currentPath.points.length; i++) {
+          const pt = imageToScreen(currentPath.points[i]);
+          ctx.lineTo(pt.x, pt.y);
+        }
+        ctx.strokeStyle = options.pathColor;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+    }
+    
+    // Draw preview path
+    const previewPath = lassoEngineRef.current?.getState().previewPath || [];
+    if (previewPath.length > 1) {
+      ctx.beginPath();
+      ctx.setLineDash([4, 4]);
+      const start = imageToScreen(previewPath[0]);
+      ctx.moveTo(start.x, start.y);
+      
+      for (let i = 1; i < previewPath.length; i++) {
+        const pt = imageToScreen(previewPath[i]);
+        ctx.lineTo(pt.x, pt.y);
+      }
+      ctx.strokeStyle = options.pathColor;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    
+    // Draw anchors
+    if (currentPath) {
+      for (const anchor of currentPath.anchors) {
+        const pt = imageToScreen(anchor.point);
+        
+        // Draw anchor circle
+        ctx.beginPath();
+        ctx.arc(pt.x, pt.y, options.nodeSize / 2, 0, Math.PI * 2);
+        
+        // Color based on strength for elastic mode
+        if (options.variation === 'elastic-progressive' && options.showElasticGradient) {
+          const hue = 60 + anchor.strength * 60; // Yellow -> Green
+          ctx.fillStyle = `hsl(${hue}, 100%, 50%)`;
+        } else {
+          ctx.fillStyle = options.nodeColor;
+        }
+        ctx.fill();
+        
+        // Border
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        
+        // Edge quality indicator
+        if (options.showEdgeTrailNode && anchor.edgeQuality < 0.5) {
+          ctx.beginPath();
+          ctx.arc(pt.x, pt.y, options.nodeSize / 2 + 3, 0, Math.PI * 2);
+          ctx.strokeStyle = '#ffa500'; // Orange for poor edge quality
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        }
+      }
+    }
+    
+    // Draw lazy cursor (stabilization visualization)
+    if (lassoState.isActive && lassoEngineRef.current) {
+      const state = lassoEngineRef.current.getState();
+      const lazyCursor = state.lazyCursor;
+      
+      // Outer circle (mouse position)
+      const outerScreen = imageToScreen(lazyCursor.outerPosition);
+      ctx.beginPath();
+      ctx.arc(outerScreen.x, outerScreen.y, lazyCursor.radius * transform.zoom, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      
+      // Inner position (stabilized)
+      const innerScreen = imageToScreen(lazyCursor.innerPosition);
+      ctx.beginPath();
+      ctx.arc(innerScreen.x, innerScreen.y, 3, 0, Math.PI * 2);
+      ctx.fillStyle = options.pathColor;
+      ctx.fill();
+    }
+    
+    // Draw prediction zone for predictive mode
+    if (options.showPredictionZone && options.variation === 'predictive-directional' && lassoState.isActive) {
+      const state = lassoEngineRef.current?.getState();
+      if (state?.lazyCursor) {
+        const pos = imageToScreen(state.lazyCursor.innerPosition);
+        const coneAngle = (options.predictionConeAngle * Math.PI) / 180;
+        
+        // Draw prediction cone (simplified as arc)
+        ctx.beginPath();
+        ctx.moveTo(pos.x, pos.y);
+        ctx.arc(pos.x, pos.y, 50 * transform.zoom, -coneAngle / 2, coneAngle / 2);
+        ctx.closePath();
+        ctx.fillStyle = 'rgba(255, 165, 0, 0.15)';
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(255, 165, 0, 0.5)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
+    }
+    
+    ctx.restore();
+  }, [lassoState, lassoOptions, transform, getCompositeImageData]);
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
     const worldPoint = coordinateSystem.screenToWorld(e.clientX, e.clientY);
@@ -164,6 +356,24 @@ export function EditorCanvas({ aiPins = [], isPinMode = false, onAddPin }: Edito
       return;
     }
 
+    // Lasso tool mouse move
+    if ((activeTool === 'lasso' || activeTool === 'magnetic-lasso') && lassoState.isActive && lassoEngineRef.current) {
+      const compositeData = getCompositeImageData();
+      if (!compositeData) return;
+      const imagePoint = worldToImage(worldPoint.x, worldPoint.y, compositeData);
+      lassoEngineRef.current.updateLasso(imagePoint);
+      
+      // Update state for rendering
+      const state = lassoEngineRef.current.getState();
+      setLassoState({
+        isActive: state.isActive,
+        path: state.currentPath,
+        previewPath: state.previewPath,
+        anchors: state.currentPath?.anchors || [],
+      });
+      return;
+    }
+
     if (activeTool === 'magic-wand' && project.layers.length > 0 && !isRightMouseDown) {
       const compositeData = getCompositeImageData();
       if (!compositeData) return;
@@ -182,7 +392,7 @@ export function EditorCanvas({ aiPins = [], isPinMode = false, onAddPin }: Edito
       logPerformance('hover-preview', duration, result.metadata.pixelCount);
       setHoverPreview(result);
     }
-  }, [activeTool, isPanning, isPainting, isRightMouseDown, panStart, transform, project.layers, toolOptions, getCompositeImageData, getActiveLayer, worldToImage, setHoverPreview, setCursorPosition, setTransform, updateLayer]);
+  }, [activeTool, isPanning, isPainting, isRightMouseDown, panStart, transform, project.layers, toolOptions, getCompositeImageData, getActiveLayer, worldToImage, setHoverPreview, setCursorPosition, setTransform, updateLayer, lassoState.isActive]);
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     if (e.button === 2) {
@@ -209,6 +419,36 @@ export function EditorCanvas({ aiPins = [], isPinMode = false, onAddPin }: Edito
       if (imagePoint.x >= 0 && imagePoint.x < compositeData.width &&
           imagePoint.y >= 0 && imagePoint.y < compositeData.height) {
         onAddPin?.(imagePoint.x, imagePoint.y);
+      }
+      return;
+    }
+
+    // Lasso tools - start or add anchor
+    if (e.button === 0 && (activeTool === 'lasso' || activeTool === 'magnetic-lasso') && lassoEngineRef.current) {
+      const compositeData = getCompositeImageData();
+      if (!compositeData) return;
+      const worldPoint = coordinateSystem.screenToWorld(e.clientX, e.clientY);
+      const imagePoint = worldToImage(worldPoint.x, worldPoint.y, compositeData);
+      
+      if (!lassoState.isActive) {
+        // Start new lasso
+        lassoEngineRef.current.startLasso(imagePoint);
+        setLassoState({
+          isActive: true,
+          path: lassoEngineRef.current.getState().currentPath,
+          previewPath: [],
+          anchors: [],
+        });
+        toast.info('Lasso started. Click to add anchors, double-click to complete.');
+      } else {
+        // Add anchor point
+        lassoEngineRef.current.addAnchor(imagePoint);
+        const state = lassoEngineRef.current.getState();
+        setLassoState(prev => ({
+          ...prev,
+          path: state.currentPath,
+          anchors: state.currentPath?.anchors || [],
+        }));
       }
       return;
     }
@@ -366,11 +606,28 @@ export function EditorCanvas({ aiPins = [], isPinMode = false, onAddPin }: Edito
     if (activeTool === 'hand') return 'grab';
     if (activeTool === 'ai-pin' || isPinMode) return 'crosshair';
     if (activeTool === 'magic-wand') return 'crosshair';
+    if (activeTool === 'lasso' || activeTool === 'magnetic-lasso') return 'crosshair';
     if (activeTool === 'move') return 'move';
     if (activeTool === 'zoom') return 'zoom-in';
     if (activeTool === 'brush' || activeTool === 'eraser') return 'crosshair';
     return 'default';
   };
+
+  // Handle double-click to complete lasso
+  const handleDoubleClick = useCallback((e: React.MouseEvent) => {
+    if ((activeTool === 'lasso' || activeTool === 'magnetic-lasso') && lassoState.isActive && lassoEngineRef.current) {
+      const completedPath = lassoEngineRef.current.completeLasso(true);
+      if (completedPath && completedPath.isClosed) {
+        const compositeData = getCompositeImageData();
+        if (compositeData) {
+          const mask = lassoPathToMask(completedPath, compositeData.width, compositeData.height);
+          toast.success(`Lasso completed with ${completedPath.points.length} points`);
+          // TODO: Create layer from mask or set as active selection
+        }
+      }
+      setLassoState({ isActive: false, path: null, previewPath: [], anchors: [] });
+    }
+  }, [activeTool, lassoState.isActive, getCompositeImageData]);
 
   return (
     <div ref={containerRef} className="relative w-full h-full overflow-hidden bg-canvas-bg">
@@ -383,6 +640,7 @@ export function EditorCanvas({ aiPins = [], isPinMode = false, onAddPin }: Edito
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseLeave}
         onWheel={handleWheel}
+        onDoubleClick={handleDoubleClick}
         onContextMenu={(e) => e.preventDefault()}
       />
       <canvas ref={brushCanvasRef} className="absolute inset-0 pointer-events-none" />
@@ -403,6 +661,22 @@ export function EditorCanvas({ aiPins = [], isPinMode = false, onAddPin }: Edito
           )}
           <span className="text-[10px] text-muted-foreground/70 block">
             Click: new layer · Shift: multi-select · Alt: cutout
+          </span>
+        </div>
+      )}
+
+      {(activeTool === 'lasso' || activeTool === 'magnetic-lasso') && (
+        <div className="absolute top-4 left-4 px-3 py-1.5 bg-panel-bg/90 backdrop-blur-sm rounded-md border border-border space-y-1">
+          <span className="font-mono-precision text-xs text-muted-foreground block">
+            {activeTool === 'magnetic-lasso' ? 'Magnetic Lasso' : 'Freehand Lasso'}
+          </span>
+          {lassoState.isActive && (
+            <span className="font-mono-precision text-xs text-primary block">
+              {lassoState.anchors.length} anchor{lassoState.anchors.length !== 1 ? 's' : ''} · Double-click to complete
+            </span>
+          )}
+          <span className="text-[10px] text-muted-foreground/70 block">
+            Click to add anchors · Esc to cancel
           </span>
         </div>
       )}

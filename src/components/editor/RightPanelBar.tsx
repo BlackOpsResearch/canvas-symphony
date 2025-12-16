@@ -12,11 +12,12 @@ import {
   Activity,
   Scan,
   Sparkles,
+  Lasso,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
-export type PanelType = 'layers' | 'history' | 'wand-settings' | 'tool-settings' | 'color' | 'settings' | 'diagnostics' | 'filters' | 'ai-pin';
+export type PanelType = 'layers' | 'history' | 'wand-settings' | 'lasso-settings' | 'tool-settings' | 'color' | 'settings' | 'diagnostics' | 'filters' | 'ai-pin';
 
 interface PanelConfig {
   id: PanelType;
@@ -29,6 +30,7 @@ const panels: PanelConfig[] = [
   { id: 'layers', name: 'Layers', icon: Layers, shortcut: 'L' },
   { id: 'history', name: 'History', icon: History, shortcut: 'Y' },
   { id: 'wand-settings', name: 'Magic Wand', icon: Wand2 },
+  { id: 'lasso-settings', name: 'Lasso Settings', icon: Lasso },
   { id: 'filters', name: 'Image Filters', icon: Scan },
   { id: 'ai-pin', name: 'AI Segmentation', icon: Sparkles },
   { id: 'diagnostics', name: 'Diagnostics', icon: Activity },
