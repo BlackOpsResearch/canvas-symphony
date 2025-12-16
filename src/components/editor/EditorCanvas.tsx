@@ -200,24 +200,24 @@ export function EditorCanvas({ aiPins = [], isPinMode = false, onAddPin, lassoOp
     ctx.save();
     ctx.scale(dpr, dpr);
     
-    // Transform to screen coordinates
-    const imageToScreen = (point: Point): Point => {
+    // Transform to canvas coordinates (not screen - we're drawing on canvas)
+    const imageToCanvas = (point: Point): Point => {
       const worldX = point.x - compositeData.width / 2;
       const worldY = point.y - compositeData.height / 2;
-      return coordinateSystem.worldToScreen(worldX, worldY);
+      return coordinateSystem.worldToCanvas(worldX, worldY);
     };
     
     // Draw main path
     const currentPath = lassoEngineRef.current?.getState().currentPath;
     if (currentPath && currentPath.points.length > 1) {
       ctx.beginPath();
-      const start = imageToScreen(currentPath.points[0]);
+      const start = imageToCanvas(currentPath.points[0]);
       ctx.moveTo(start.x, start.y);
       
       // Draw with elastic gradient if enabled
       if (options.showElasticGradient && options.variation === 'elastic-progressive') {
         for (let i = 1; i < currentPath.points.length; i++) {
-          const pt = imageToScreen(currentPath.points[i]);
+          const pt = imageToCanvas(currentPath.points[i]);
           // Calculate gradient based on position
           const t = i / currentPath.points.length;
           ctx.strokeStyle = `hsl(${60 + t * 60}, 100%, 50%)`; // Yellow to green
@@ -229,7 +229,7 @@ export function EditorCanvas({ aiPins = [], isPinMode = false, onAddPin, lassoOp
         }
       } else {
         for (let i = 1; i < currentPath.points.length; i++) {
-          const pt = imageToScreen(currentPath.points[i]);
+          const pt = imageToCanvas(currentPath.points[i]);
           ctx.lineTo(pt.x, pt.y);
         }
         ctx.strokeStyle = options.pathColor;
@@ -243,11 +243,11 @@ export function EditorCanvas({ aiPins = [], isPinMode = false, onAddPin, lassoOp
     if (previewPath.length > 1) {
       ctx.beginPath();
       ctx.setLineDash([4, 4]);
-      const start = imageToScreen(previewPath[0]);
+      const start = imageToCanvas(previewPath[0]);
       ctx.moveTo(start.x, start.y);
       
       for (let i = 1; i < previewPath.length; i++) {
-        const pt = imageToScreen(previewPath[i]);
+        const pt = imageToCanvas(previewPath[i]);
         ctx.lineTo(pt.x, pt.y);
       }
       ctx.strokeStyle = options.pathColor;
@@ -259,7 +259,7 @@ export function EditorCanvas({ aiPins = [], isPinMode = false, onAddPin, lassoOp
     // Draw anchors
     if (currentPath) {
       for (const anchor of currentPath.anchors) {
-        const pt = imageToScreen(anchor.point);
+        const pt = imageToCanvas(anchor.point);
         
         // Draw anchor circle
         ctx.beginPath();
@@ -296,17 +296,17 @@ export function EditorCanvas({ aiPins = [], isPinMode = false, onAddPin, lassoOp
       const lazyCursor = state.lazyCursor;
       
       // Outer circle (mouse position)
-      const outerScreen = imageToScreen(lazyCursor.outerPosition);
+      const outerCanvas = imageToCanvas(lazyCursor.outerPosition);
       ctx.beginPath();
-      ctx.arc(outerScreen.x, outerScreen.y, lazyCursor.radius * transform.zoom, 0, Math.PI * 2);
+      ctx.arc(outerCanvas.x, outerCanvas.y, lazyCursor.radius * transform.zoom, 0, Math.PI * 2);
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
       ctx.lineWidth = 1;
       ctx.stroke();
       
       // Inner position (stabilized)
-      const innerScreen = imageToScreen(lazyCursor.innerPosition);
+      const innerCanvas = imageToCanvas(lazyCursor.innerPosition);
       ctx.beginPath();
-      ctx.arc(innerScreen.x, innerScreen.y, 3, 0, Math.PI * 2);
+      ctx.arc(innerCanvas.x, innerCanvas.y, 3, 0, Math.PI * 2);
       ctx.fillStyle = options.pathColor;
       ctx.fill();
     }
@@ -315,7 +315,7 @@ export function EditorCanvas({ aiPins = [], isPinMode = false, onAddPin, lassoOp
     if (options.showPredictionZone && options.variation === 'predictive-directional' && lassoState.isActive) {
       const state = lassoEngineRef.current?.getState();
       if (state?.lazyCursor) {
-        const pos = imageToScreen(state.lazyCursor.innerPosition);
+        const pos = imageToCanvas(state.lazyCursor.innerPosition);
         const coneAngle = (options.predictionConeAngle * Math.PI) / 180;
         
         // Draw prediction cone (simplified as arc)
